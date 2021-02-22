@@ -4,7 +4,7 @@ import numpy as np
 from math import pi
 
 import capytaine as cpt
-from capytaine.ui.vtk.animation import Animation
+# from capytaine.ui.vtk.animation import Animation
 
 os.system('cls')
 logging.basicConfig(level=logging.INFO, format="%(levelname)s:\t%(message)s")
@@ -13,7 +13,7 @@ mode_count = 4
 tube_radius = 0.20
 tube_length = 10.0
 tube_submergence = -0.3
-omega_range = np.linspace(0.3, 8.0, 10)
+omega_range = np.linspace(0.3, 8.0, 5)
 
 def bulging_mode(x, y, z, mode_number, radius, length, z_s):
     from math import sin, pi
@@ -29,7 +29,7 @@ def bulging_mode(x, y, z, mode_number, radius, length, z_s):
 # Generate tube mesh from input values
 tube = cpt.HorizontalCylinder(
     radius=tube_radius, length=tube_length, center=(0, 0, tube_submergence),
-    nx=10, ntheta=15, nr=3, clever=False,
+    nx=20, ntheta=15, nr=3, clever=False,
 )
 tube.keep_immersed_part()
 #tube.show()
@@ -71,19 +71,6 @@ tube.hydrostatic_stiffness = tube.add_dofs_labels_to_matrix(
          [0,   0,   0,   0,  0,   0,  0,  0,  0,  4e9]]
     )
 
-tube.stiffness = tube.add_dofs_labels_to_matrix(
-        [[2e7, 0,   0,   0,   0,   0,  0,  0,  0,  0],
-         [0,   2e7, 0,   0,   0,   0,  0,  0,  0,  0],
-         [0,   0,   2e7, 0,   0,   0,  0,  0,  0,  0],
-         [0,   0,   0,   1e10, 0,   0,  0,  0,  0,  0],
-         [0,   0,   0,   0,   2e9, 0,  0,  0,  0,  0],
-         [0,   0,   0,   0,  0,   1e10,  0,  0,  0,  0],
-         [0,   0,   0,   0,  0,   0,  4e6,  0,  0,  0],
-         [0,   0,   0,   0,  0,   0,  0,  4e7,  0,  0],
-         [0,   0,   0,   0,  0,   0,  0,  0,  4e8,  0],
-         [0,   0,   0,   0,  0,   0,  0,  0,  0,  4e9]]
-    )
-
 tube.dissipation = tube.add_dofs_labels_to_matrix(
         [[2e7, 0,   0,   0,   0,   0,  0,  0,  0,  0],
          [0,   2e7, 0,   0,   0,   0,  0,  0,  0,  0],
@@ -98,7 +85,7 @@ tube.dissipation = tube.add_dofs_labels_to_matrix(
     )
 
 
-animation = tube.animate(motion={'Surge': 1.0, 'bulge_1': 0.08, 'bulge_2': 0.03 + 0.07j, 'bulge_3': -0.05 - 0.03j, 'bulge_4': -0.01-0.02j}, loop_duration=4.0)
+#animation = tube.animate(motion={'Surge': 1.0, 'bulge_1': 0.08, 'bulge_2': 0.03 + 0.07j, 'bulge_3': -0.05 - 0.03j, 'bulge_4': -0.01-0.02j}, loop_duration=4.0)
 #animation.run()
 
 wave_direction = 0.0
@@ -119,42 +106,35 @@ for dof in tube.dofs:
     plt.plot(
         omega_range,
         data['added_mass'].sel(radiating_dof=dof, influenced_dof=dof),
-        label=dof,
-        marker='o',
+        label=dof
     )
 plt.xlabel('omega')
 plt.ylabel('Added Mass')
 plt.legend()
-plt.tight_layout()
-plt.show()
+plt.savefig('added_mass.png', bbox_inches='tight')
+
 
 plt.figure()
 for dof in tube.dofs:
     plt.plot(
         omega_range,
         data['radiation_damping'].sel(radiating_dof=dof, influenced_dof=dof),
-        label=dof,
-        marker='o',
+        label=dof
     )
 plt.xlabel('omega')
 plt.ylabel('Radiation damping')
 plt.legend()
-plt.tight_layout()
-plt.show()
+plt.savefig('radiation_damping.png', bbox_inches='tight')
+
 
 plt.figure()
 for dof in tube.dofs:
-    print(dof)
     plt.plot(
         omega_range, 
-        sum(abs(data['RAO'].sel(radiating_dof=dof).data) for dof in tube.dofs),
-        #data['RAO'].sel(radiating_dof=dof, influenced_dof=dof),
+        np.abs(data['RAO'].sel(radiating_dof=dof).data),
         label=dof,
-        marker='o',
     )
-#rao_faces_motion = sum(data['RAO'].sel(radiating_dof=dof).data for dof in tube.dofs)
 plt.xlabel('omega')
 plt.ylabel('RAO')
 plt.legend()
-plt.tight_layout()
-plt.show()
+plt.savefig('response_amplitude_operator.png', bbox_inches='tight')
