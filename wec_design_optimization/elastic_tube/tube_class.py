@@ -1,10 +1,26 @@
 import numpy as np
 import capytaine as cpt
 
+def evaluate_tube_design(design_variables):
+        """Evaluates a complete tube design from start to finish
+
+        """
+        elastic_tube_instance = ElasticTube(design_variables)
+        elastic_tube_instance.generate_tube()
+        elastic_tube_instance.evaluate_tube_modal_response_amplitudes()
+        elastic_tube_instance.evaluate_dissipated_power()
+
+        objective_function_value = elastic_tube_instance.objective_function()
+
+        return objective_function_value
+
+
+
+
 class ElasticTube(object):
 
 
-    def __init__(self, static_radius, length, submergence, dissipation_coefficient):
+    def __init__(self, static_radius, length, submergence, power_take_off_damping):
         from math import inf, pi
 
         # Constants
@@ -12,15 +28,19 @@ class ElasticTube(object):
         self.water_depth = -inf
         self.wave_direction = 0.0
         self.mode_count = 5
+        self.viscous_damping_parameter = pi * 8e-6
+        self.wave_frequencies = np.linspace(0.1, 8.0, 80)
+        self.thickness = 0.01 # units: {m}
 
         # Independent design variables
         self.static_radius = static_radius
         self.length = length
         self.submergence = submergence
-        self.dissipation_coefficient = dissipation_coefficient
+        self.power_take_off_damping = power_take_off_damping
 
-        # Dependent geometry for integration bounds
-        self.bounds = [-length / 2, length / 2]
+        # Dependent miscellaneous variables
+        self.integration_bounds = [-length / 2, length / 2]
+        self.dissipation_coefficient = ((self.thickness * self.cross_sectional_area) / (self.rho * self.static_radius)) * self.power_take_off_damping
 
         # Dependent inertia variables
         self.cross_sectional_area = pi * (self.static_radius ** 2)
@@ -30,6 +50,9 @@ class ElasticTube(object):
         self.rotational_inertia_x_axis = (1 / 2) * self.displaced_mass * (self.static_radius ** 2)
         self.rotational_inertia_y_axis = (1 / 12) * self.displaced_mass * (3 * (self.static_radius ** 2) + (self.length ** 2))
         self.rotational_inertia_z_axis = self.rotational_inertia_y_axis
+    
+    def objective_function(self):
+        return self.material_mean_power_dissipation / self.displaced_volume
 
     def generate_tube(self):
         """Generates an elastic tube mesh with all attached rigid body (if relevant) and modal degrees of freedom
@@ -45,10 +68,9 @@ class ElasticTube(object):
             radius=self.static_radius, length=self.length, center=(0, 0, self.submergence),
             nx=60, ntheta=20, nr=3, clever=False) # TODO: adjust nx, nr, clever args here
         tube.keep_immersed_part()
-        #tube.show()
 
         # Add all rigid DOFs
-        tube.add_all_rigid_body_dofs()
+        #tube.add_all_rigid_body_dofs()
 
         # Add all elastic mode DOFs
         for k in range(self.mode_count):
@@ -59,7 +81,39 @@ class ElasticTube(object):
         tube.dissipation = tube.add_dofs_labels_to_matrix(ElasticTube.damping_matrix())
         tube.hydrostatic_stiffness = tube.add_dofs_labels_to_matrix(ElasticTube.stiffness_matrix())
 
-        return tube
+        self.tube = tube
+
+    def evaluate_tube_modal_response_amplitudes(self):
+        """
+
+        """
+        solver = cpt.BEMSolver()
+        problems = [cpt.RadiationProblem(omega=omega, body=self.tube, radiating_dof=dof) for dof in self.tube.dofs for omega in self.wave_frequencies]
+        problems += [cpt.DiffractionProblem(omega=omega, body=self.tube, wave_direction=self.wave_direction) for omega in self.wave_frequencies]
+        results = [solver.solve(problem) for problem in problems]
+        result_data = cpt.assemble_dataset(results)
+        modal_response_amplitude_data = cpt.post_pro.rao(result_data, wave_direction=self.wave_direction)
+
+        self.modal_response_amplitude_data = modal_response_amplitude_data
+
+    def evaluate_dissipated_power(self):
+        """Calculates the mean power dissipated by the material as a function of wave frequency
+
+        Args:
+            None
+        
+        Returns:
+            material_mean_power_dissipation (1d np array)
+
+        """
+        modal_response_amplitudes = ElasticTube.evaluate_tube_modal_response_amplitudes()
+        total_damping_response = 0
+        for m in range(self.mode_count):
+            for k in range(self.mode_count):
+                total_damping_response += (modal_response_amplitudes[m] * modal_response_amplitudes[k]).real * self.wall_damping_matrix[m][k]
+        material_mean_power_dissipation = (1 / 2) * self.rho * self.cross_sectional_area * self.dissipation_coefficient * self.wave_frequencies * total_damping_response
+
+        self.material_mean_power_dissipation = material_mean_power_dissipation
 
     def mode_shapes(self, x, y, z, mode_number, integration_flag=False):
         # Define chi(x)
@@ -118,6 +172,8 @@ class ElasticTube(object):
 
         damping_matrix = self.rho * self.cross_sectional_area * self.dissipation_coefficient * wall_damping_matrix \
             + self.rho * self.viscous_damping_parameter * inner_flow_damping_matrix
+
+        self.wall_damping_matrix = wall_damping_matrix
         return damping_matrix
 
     def stiffness_matrix(self):
@@ -134,19 +190,6 @@ class ElasticTube(object):
         stiffness_matrix = self.displaced_mass * np.diag(modal_frequencies ** 2)
 
         return stiffness_matrix
-
-    def power(self):
-        """Calculates the mean power dissipated by the material as a function of wave frequency
-
-        """
-
-        pass
-
-    def objective(self):
-        from math import pi
-
-        displaced_volume = pi * (self.static_radius ** 2) * self.length
-        return ElasticTube.power() / displaced_volume
 
     def _find_modal_frequencies(self):
         """Calculates the roots of the nonlinear dispersion relationship governing the elastic tube
