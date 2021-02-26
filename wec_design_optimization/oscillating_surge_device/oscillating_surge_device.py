@@ -9,47 +9,60 @@ import matplotlib.pyplot as plt
 os.system('cls')
 
 
-def bending_mode(x, y, z):
+def plate_flexure_mode_shape(x, y, z):
     from math import pi, cos, sin, cosh, sinh
-    height = 8.0
-    z = z + height
+
+    device_height = 10.0
+    device_width = 6.0
+    device_thickness = 0.50
+    base_height = 0.3
+    depth = -10.0
+
+    z_center = depth + base_height + device_height / 2
     
-    k = (1 / 8.0) * (5 * pi / 2.0)
-
-    c2 = 1.0
-    c1 = ((cos(k*height) + cosh(k*height)) / (sin(k*height + sinh(k*height))))*c2
-
-    c3 = c1
-    c4 = -c2
-
-    x_disp = c1*sin(k*z) + c2*cos(k*z) + c3*sinh(k*z) + c4*cosh(k*z)
-    x_end_disp = c1*sin(k*height) + c2*cos(k*height) + c3*sinh(k*height) + c4*cosh(k*height)
-
-    x_disp = x_disp / x_end_disp  # Normalize end displacement to unity
+    u = cos(pi * y / device_width) * cos(pi*(z - z_center) / device_height)
+    v = 0.0
+    w = 0.0
 
     # x_disp = (z + height) ** 2 / (height ** 2)  # Initialize parabolic mode shape for estimates
 
-    return (x_disp, 0, 0)
+    return (u, v, w)
 
 
 # Set logger configuration
 logging.basicConfig(level=logging.INFO, format="%(levelname)s:\t%(message)s")
 
 # Create OSWEC mesh
-height = 8.0
-full_oswec = RectangularParallelepiped(size=(0.5, 5.0, height), resolution=(4, 40, 32), center = (0.0, 0.0, 0.0))
-oswec = full_oswec.keep_immersed_part()
+device_height = 10.0
+device_width = 6.0
+device_thickness = 0.50
+base_height = 0.3
+depth = -10.0
+
+full_oswec = RectangularParallelepiped(size=(device_thickness, device_width, device_height),
+            resolution=(4, 40, 32),
+            center = (0.0, 0.0, depth + base_height + device_height / 2))
+
+# Add custom defined pitch axis about constrained axis
+pitch_axis = Axis()
+pitch_axis.point = np.array([0.0, 0.0, depth + base_height])
+pitch_axis.vector = np.array([0.0, 1.0, 0.0])
+
+full_oswec.add_rotation_dof(name='Pitch', axis = pitch_axis)
+full_oswec.dofs['plate_flexure'] = np.array([plate_flexure_mode_shape(x, y, z) for x, y, z, in full_oswec.mesh.faces_centers])
+
+oswec = full_oswec.copy()
+oswec.keep_immersed_part() # TODO: copy here instead
+#full_oswec.show()
 #oswec.show()
 
-# Add all relevant DOFs
-#  oswec.add_rotation_dof(name="Pitch")
-#  oswec.dofs['vertical_pitch'] = np.array([(1 + (z / height), 0, 0) for x, y, z, in oswec.mesh.faces_centers])
-oswec.dofs['pitch_bend'] = np.array([bending_mode(x, y, z) for x, y, z, in oswec.mesh.faces_centers])
+# Animate rigid body pitch DOF along with modal flexure DOF
+animation = full_oswec.animate(motion={'Pitch': 0.40, 'plate_flexure': 1.00}, loop_duration=6.0)
+animation.run()
 
 # Problem definition
 omega_range = np.linspace(0.1, 7.0, 40)
-#oswec_problems = [RadiationProblem(body=oswec, radiating_dof=dof, omega=omega, sea_bottom=-10.0) for dof in oswec.dofs for omega in omega_range]
-oswec_problems = [RadiationProblem(body=oswec, radiating_dof='pitch_bend', omega=omega, sea_bottom=-10.0) for omega in omega_range]
+oswec_problems = [RadiationProblem(body=oswec, radiating_dof=dof, omega=omega, sea_bottom=depth) for dof in oswec.dofs for omega in omega_range]
 
 # Solve for results and assemble data
 solver = BEMSolver()
@@ -59,9 +72,9 @@ data = assemble_dataset(results)
 
 # Plot added mass
 plt.figure()
-plt.plot(omega_range, data['added_mass'].sel(radiating_dof="pitch_bend"), label="pitch_bend", marker='o')
+plt.plot(omega_range, data['added_mass'].sel(radiating_dof="Pitch"), label="Pitch", marker='o')
 plt.show()
 
-# Animate modal DOF
-animation = full_oswec.animate(motion={'pitch_bend': 1.0}, loop_duration=2.5)
-animation.run()
+plt.figure()
+plt.plot(omega_range, data['radiation_damping'].sel(radiating_dof="Pitch"), label="Pitch", marker='o')
+plt.show()
