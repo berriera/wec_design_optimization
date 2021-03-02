@@ -20,7 +20,7 @@ def evaluate_tube_design(design_variables):
 class ElasticTube(object):
 
 
-    def __init__(self, static_radius, length, submergence, power_take_off_damping):
+    def __init__(self, tube_design_variables):
         from math import inf, pi
 
         # Constants
@@ -32,21 +32,23 @@ class ElasticTube(object):
         self.wave_frequencies = np.linspace(0.1, 8.0, 80)
         self.thickness = 0.01 # units: {m}
 
-        # Independent design variables
-        self.static_radius = static_radius
-        self.length = length
-        self.submergence = submergence
-        self.power_take_off_damping = power_take_off_damping
+        # Unpack independent design variables
+        self.static_radius = tube_design_variables[0]
+        self.length = tube_design_variables[1]
+        self.submergence = tube_design_variables[2]
+        self.power_take_off_damping = tube_design_variables[3]
+
+        # Dependent geometry variables
+        self.cross_sectional_area = pi * (self.static_radius ** 2)
+        self.displaced_volume = pi * (self.static_radius ** 2) * self.length
 
         # Dependent miscellaneous variables
-        self.integration_bounds = [-length / 2, length / 2]
+        self.integration_bounds = [-self.length / 2, self.length / 2]
+        self.distensibility = 0.0  # TODO: make this dependent on elasticity and geometry design variables
         self.dissipation_coefficient = ((self.thickness * self.cross_sectional_area) / (self.rho * self.static_radius)) * self.power_take_off_damping
 
         # Dependent inertia variables
-        self.cross_sectional_area = pi * (self.static_radius ** 2)
-        self.displaced_volume = pi * (self.static_radius ** 2) * self.length
         self.displaced_mass = self.rho * self.displaced_volume
-
         self.rotational_inertia_x_axis = (1 / 2) * self.displaced_mass * (self.static_radius ** 2)
         self.rotational_inertia_y_axis = (1 / 12) * self.displaced_mass * (3 * (self.static_radius ** 2) + (self.length ** 2))
         self.rotational_inertia_z_axis = self.rotational_inertia_y_axis
@@ -75,11 +77,11 @@ class ElasticTube(object):
         # Add all elastic mode DOFs
         for k in range(self.mode_count):
             key_name = 'bulge_mode_' + str(k+1)
-            tube.dofs[key_name] = np.array([ElasticTube.mode_shape_derivatives(x, y, z, mode_number=k+1) for x, y, z, in tube.mesh.faces_centers])    
+            tube.dofs[key_name] = np.array([self.mode_shape_derivatives(x, y, z, mode_number=k+1) for x, y, z in tube.mesh.faces_centers])    
 
-        tube.mass = tube.add_dofs_labels_to_matrix(ElasticTube.mass_matrix())
-        tube.dissipation = tube.add_dofs_labels_to_matrix(ElasticTube.damping_matrix())
-        tube.hydrostatic_stiffness = tube.add_dofs_labels_to_matrix(ElasticTube.stiffness_matrix())
+        tube.mass = tube.add_dofs_labels_to_matrix(self.mass_matrix())
+        tube.dissipation = tube.add_dofs_labels_to_matrix(self.damping_matrix())
+        tube.hydrostatic_stiffness = tube.add_dofs_labels_to_matrix(self.stiffness_matrix())
 
         self.tube = tube
 
@@ -106,28 +108,37 @@ class ElasticTube(object):
             material_mean_power_dissipation (1d np array)
 
         """
-        modal_response_amplitudes = ElasticTube.evaluate_tube_modal_response_amplitudes()
+        modal_response_amplitudes = self.evaluate_tube_modal_response_amplitudes()
         total_damping_response = 0
-        for m in range(self.mode_count):
-            for k in range(self.mode_count):
-                total_damping_response += (modal_response_amplitudes[m] * modal_response_amplitudes[k]).real * self.wall_damping_matrix[m][k]
+        for k1 in range(self.mode_count):
+            for k2 in range(self.mode_count):
+                total_damping_response += (modal_response_amplitudes[k1] * modal_response_amplitudes[k2]).real * self.wall_damping_matrix[k1][k2]
         material_mean_power_dissipation = (1 / 2) * self.rho * self.cross_sectional_area * self.dissipation_coefficient * self.wave_frequencies * total_damping_response
 
         self.material_mean_power_dissipation = material_mean_power_dissipation
 
-    def mode_shapes(self, x, y, z, mode_number, integration_flag=False):
+    def mode_shapes(self, x, mode_number):
         # Define chi(x)
-        pass
+        from math import cos, pi
+
+        chi = -cos(mode_number * 2*pi*x / self.length) * (self.length / (mode_number * 2 * pi))
+
+        return chi
 
     def mode_shape_derivatives(self, x, y, z, mode_number, integration_flag=False):
         # Defines del{chi}/del{x}(x)
         from math import sin, pi
 
-        dr = sin(mode_number * 2*pi*x / self.length)
+        chi_dx = sin(mode_number * 2*pi*x / self.length)
+
+        if integration_flag:
+            return chi_dx
+
+        # TODO: see if v and w need to be multiplied by (-self.radius / 2)
 
         u = 0.0
-        v = (y / self.radius) * dr
-        w = ((z - self.submergence) / self.radius) * dr
+        v = (y / self.static_radius) * chi_dx
+        w = ((z - self.submergence) / self.static_radius) * chi_dx
 
         return (u, v, w)
 
@@ -167,8 +178,18 @@ class ElasticTube(object):
             damping matrix (2d np array)
 
         """
+        from scipy.integrate import quad
+
         wall_damping_matrix = np.zeros(shape=(self.mode_count, self.mode_count))
         inner_flow_damping_matrix = np.zeros(shape=(self.mode_count, self.mode_count))
+
+        for k1 in range(self.mode_count):
+            for k2 in range(self.mode_count):
+                wall_damping_matrix[k1][k2] = quad(func=self._mode_shape_derivative_product, a=self.integration_bounds[0], b=self.integration_bounds[1], args=(k1, k2))[0]
+
+        for k1 in range(self.mode_count):
+            for k2 in range(self.mode_count):
+                inner_flow_damping_matrix[k1][k2] = quad(func=self._mode_shape_product, a=self.integration_bounds[0], b=self.integration_bounds[1], args=(k1, k2))[0]
 
         damping_matrix = self.rho * self.cross_sectional_area * self.dissipation_coefficient * wall_damping_matrix \
             + self.rho * self.viscous_damping_parameter * inner_flow_damping_matrix
@@ -186,7 +207,7 @@ class ElasticTube(object):
             stiffness matrix (2d np array)
 
         """
-        modal_frequencies = ElasticTube._find_modal_frequencies()
+        modal_frequencies = self._find_modal_frequencies()
         stiffness_matrix = self.displaced_mass * np.diag(modal_frequencies ** 2)
 
         return stiffness_matrix
@@ -204,8 +225,11 @@ class ElasticTube(object):
         """
         return np.zeros(shape=self.mode_count)
 
-    def _mode_shape_product(self):
-        pass
+    def _mode_shape_product(self, x, index_1, index_2):
+        return self.mode_shapes(x, mode_number=index_1) \
+            * self.mode_shapes(x, mode_number=index_2)
 
-    def _mode_shape_derivative_product(self):
-        pass
+    def _mode_shape_derivative_product(self, x, index_1, index_2):
+        from math import nan
+        return self.mode_shape_derivatives(x, y=nan, z=nan, mode_number=index_1, integration_flag=True) \
+            * self.mode_shape_derivatives(x, y=nan, z=nan, mode_number=index_2, integration_flag=True)
