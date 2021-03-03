@@ -1,5 +1,6 @@
 import numpy as np
 import capytaine as cpt
+import logging
 
 def evaluate_tube_design(design_variables):
         """Evaluates a complete tube design from start to finish
@@ -9,12 +10,11 @@ def evaluate_tube_design(design_variables):
         elastic_tube_instance.generate_tube()
         elastic_tube_instance.evaluate_tube_modal_response_amplitudes()
         elastic_tube_instance.evaluate_dissipated_power()
+        elastic_tube_instance.save_hydrodynamic_result_figures()
 
         objective_function_value = elastic_tube_instance.objective_function()
 
         return objective_function_value
-
-
 
 
 class ElasticTube(object):
@@ -23,13 +23,15 @@ class ElasticTube(object):
     def __init__(self, tube_design_variables):
         from math import inf, pi
 
+        logging.basicConfig(level=logging.INFO, format="%(levelname)s:\t%(message)s")
+
         # Constants
         self.rho = 1025
         self.water_depth = -inf
         self.wave_direction = 0.0
         self.mode_count = 5
         self.viscous_damping_parameter = pi * 8e-6
-        self.wave_frequencies = np.linspace(0.1, 8.0, 80)
+        self.wave_frequencies = np.linspace(0.1, 5.0, 50)
         self.thickness = 0.01 # units: {m}
 
         # Unpack independent design variables
@@ -54,7 +56,7 @@ class ElasticTube(object):
         self.rotational_inertia_z_axis = self.rotational_inertia_y_axis
     
     def objective_function(self):
-        return self.material_mean_power_dissipation / self.displaced_volume
+        return np.sum(self.material_mean_power_dissipation) / self.displaced_volume
 
     def generate_tube(self):
         """Generates an elastic tube mesh with all attached rigid body (if relevant) and modal degrees of freedom
@@ -68,7 +70,7 @@ class ElasticTube(object):
         """
         tube = cpt.HorizontalCylinder(
             radius=self.static_radius, length=self.length, center=(0, 0, self.submergence),
-            nx=60, ntheta=20, nr=3, clever=False) # TODO: adjust nx, nr, clever args here
+            nx=240, ntheta=20, nr=6, clever=False) # TODO: adjust nx, nr, clever args here
         tube.keep_immersed_part()
 
         # Add all rigid DOFs
@@ -96,6 +98,7 @@ class ElasticTube(object):
         result_data = cpt.assemble_dataset(results)
         modal_response_amplitude_data = cpt.post_pro.rao(result_data, wave_direction=self.wave_direction)
 
+        self.result_data = result_data
         self.modal_response_amplitude_data = modal_response_amplitude_data
 
     def evaluate_dissipated_power(self):
@@ -108,11 +111,11 @@ class ElasticTube(object):
             material_mean_power_dissipation (1d np array)
 
         """
-        modal_response_amplitudes = self.evaluate_tube_modal_response_amplitudes()
+        modal_response_amplitudes = self.modal_response_amplitude_data
         total_damping_response = 0
         for k1 in range(self.mode_count):
             for k2 in range(self.mode_count):
-                total_damping_response += (modal_response_amplitudes[k1] * modal_response_amplitudes[k2]).real * self.wall_damping_matrix[k1][k2]
+                total_damping_response += (modal_response_amplitudes[:, k1] * modal_response_amplitudes[:, k2]).real * self.wall_damping_matrix[k1][k2]
         material_mean_power_dissipation = (1 / 2) * self.rho * self.cross_sectional_area * self.dissipation_coefficient * self.wave_frequencies * total_damping_response
 
         self.material_mean_power_dissipation = material_mean_power_dissipation
@@ -185,11 +188,11 @@ class ElasticTube(object):
 
         for k1 in range(self.mode_count):
             for k2 in range(self.mode_count):
-                wall_damping_matrix[k1][k2] = quad(func=self._mode_shape_derivative_product, a=self.integration_bounds[0], b=self.integration_bounds[1], args=(k1, k2))[0]
+                wall_damping_matrix[k1][k2] = quad(func=self._mode_shape_derivative_product, a=self.integration_bounds[0], b=self.integration_bounds[1], args=(k1 + 1, k2 + 1))[0]
 
         for k1 in range(self.mode_count):
             for k2 in range(self.mode_count):
-                inner_flow_damping_matrix[k1][k2] = quad(func=self._mode_shape_product, a=self.integration_bounds[0], b=self.integration_bounds[1], args=(k1, k2))[0]
+                inner_flow_damping_matrix[k1][k2] = quad(func=self._mode_shape_product, a=self.integration_bounds[0], b=self.integration_bounds[1], args=(k1 + 1, k2 + 1))[0]
 
         damping_matrix = self.rho * self.cross_sectional_area * self.dissipation_coefficient * wall_damping_matrix \
             + self.rho * self.viscous_damping_parameter * inner_flow_damping_matrix
@@ -223,7 +226,7 @@ class ElasticTube(object):
                                                 size is the number of modes mode_count
 
         """
-        return np.zeros(shape=self.mode_count)
+        return np.ones(shape=self.mode_count)
 
     def _mode_shape_product(self, x, index_1, index_2):
         return self.mode_shapes(x, mode_number=index_1) \
@@ -233,3 +236,55 @@ class ElasticTube(object):
         from math import nan
         return self.mode_shape_derivatives(x, y=nan, z=nan, mode_number=index_1, integration_flag=True) \
             * self.mode_shape_derivatives(x, y=nan, z=nan, mode_number=index_2, integration_flag=True)
+
+    def log_history(self):
+        """Records all design variables and objective function values in saved text files
+        
+        """
+        import time
+        
+        # TODO: save vars in a dictionary
+        # TODO: save dictionary to .txt file
+
+        pass
+
+    def save_hydrodynamic_result_figures(self):
+        import matplotlib.pyplot as plt
+
+        plt.figure()
+        for dof in self.tube.dofs:
+            plt.plot(
+                self.wave_frequencies,
+                self.result_data['added_mass'].sel(radiating_dof=dof, influenced_dof=dof),
+                label=dof,
+                marker='o'
+            )
+        plt.xlabel('$\omega$')
+        plt.ylabel('Added Mass')
+        plt.legend()
+        plt.savefig('added_mass.png', bbox_inches='tight')
+
+
+        plt.figure()
+        for dof in self.tube.dofs:
+            plt.plot(
+                self.wave_frequencies,
+                self.result_data['radiation_damping'].sel(radiating_dof=dof, influenced_dof=dof),
+                label=dof,
+                marker='o'
+            )
+        plt.xlabel('$\omega$')
+        plt.ylabel('Radiation damping')
+        plt.legend()
+        plt.savefig('radiation_damping.png', bbox_inches='tight')
+
+        plt.figure()
+        plt.plot(
+            self.wave_frequencies,
+            self.material_mean_power_dissipation,
+            marker='o'
+        )
+        plt.xlabel('$\omega$')
+        plt.ylabel('$P(\omega)$')
+        plt.savefig('dissipated_power.png', bbox_inches='tight')
+        
