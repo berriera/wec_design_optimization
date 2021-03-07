@@ -115,7 +115,7 @@ class ElasticTube(object):
         total_damping_response = 0
         for k1 in range(self.mode_count):
             for k2 in range(self.mode_count):
-                total_damping_response += (modal_response_amplitudes[:, k1] * modal_response_amplitudes[:, k2]).real * self.wall_damping_matrix[k1][k2]
+                total_damping_response += (modal_response_amplitudes[:, k1] * np.conjugate(modal_response_amplitudes[:, k2])).real * self.wall_damping_matrix[k1][k2]
         material_mean_power_dissipation = (1 / 2) * self.rho * self.cross_sectional_area * self.dissipation_coefficient * self.wave_frequencies * total_damping_response
 
         self.material_mean_power_dissipation = material_mean_power_dissipation
