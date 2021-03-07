@@ -5,6 +5,7 @@ import capytaine.post_pro
 import numpy as np
 import logging
 import matplotlib.pyplot as plt
+import xarray
 
 os.system('cls')
 
@@ -38,10 +39,17 @@ device_width = 6.0
 device_thickness = 0.50
 base_height = 0.3
 depth = -10.0
+wave_direction = 0.0
+
+omega_range = np.linspace(0.1, 5.0, 50)
 
 full_oswec = RectangularParallelepiped(size=(device_thickness, device_width, device_height),
             resolution=(4, 40, 32),
             center = (0.0, 0.0, depth + base_height + device_height / 2))
+
+dissipation_matrix = np.zeros(shape=(2, 2))
+mass_matrix = 1e6 * np.eye(N=2)
+stiffness_matrix = 1e5 * np.eye(N=2)
 
 # Add custom defined pitch axis about constrained axis
 pitch_axis = Axis()
@@ -49,32 +57,67 @@ pitch_axis.point = np.array([0.0, 0.0, depth + base_height])
 pitch_axis.vector = np.array([0.0, 1.0, 0.0])
 
 full_oswec.add_rotation_dof(name='Pitch', axis = pitch_axis)
-full_oswec.dofs['plate_flexure'] = np.array([plate_flexure_mode_shape(x, y, z) for x, y, z, in full_oswec.mesh.faces_centers])
+full_oswec.dofs['Plate Flexure'] = np.array([plate_flexure_mode_shape(x, y, z) for x, y, z, in full_oswec.mesh.faces_centers])
+
+full_oswec.mass = full_oswec.add_dofs_labels_to_matrix(mass_matrix)
+full_oswec.dissipation = full_oswec.add_dofs_labels_to_matrix(dissipation_matrix)
+full_oswec.hydrostatic_stiffness = full_oswec.add_dofs_labels_to_matrix(stiffness_matrix)
 
 oswec = full_oswec.copy()
-oswec.keep_immersed_part() # TODO: copy here instead
+oswec.keep_immersed_part()
 #full_oswec.show()
 #oswec.show()
 
 # Animate rigid body pitch DOF along with modal flexure DOF
-animation = full_oswec.animate(motion={'Pitch': 0.40, 'plate_flexure': 1.00}, loop_duration=6.0)
-animation.run()
+#animation = full_oswec.animate(motion={'Pitch': 0.40, 'plate_flexure': 1.00}, loop_duration=6.0)
+#animation.run()
 
 # Problem definition
-omega_range = np.linspace(0.1, 7.0, 40)
-oswec_problems = [RadiationProblem(body=oswec, radiating_dof=dof, omega=omega, sea_bottom=depth) for dof in oswec.dofs for omega in omega_range]
+oswec_problems = [RadiationProblem(body=oswec,sea_bottom=depth, 
+                    radiating_dof=dof, omega=omega) 
+                    for dof in oswec.dofs 
+                    for omega in omega_range]
+oswec_problems += [DiffractionProblem(body=oswec, sea_bottom=depth,
+                    omega=omega, wave_direction=wave_direction) 
+                    for omega in omega_range]
 
 # Solve for results and assemble data
 solver = BEMSolver()
-results = [solver.solve(pb) for pb in sorted(oswec_problems)]
+results = [solver.solve(problem) for problem in sorted(oswec_problems)]
 data = assemble_dataset(results)
-# rao_data = capytaine.post_pro.rao(dataset=data, wave_direction=0.0, dissipation=None, stiffness=None)
+rao_data = capytaine.post_pro.rao(dataset=data, wave_direction=0.0, dissipation=None, stiffness=None)
 
-# Plot added mass
-plt.figure()
-plt.plot(omega_range, data['added_mass'].sel(radiating_dof="Pitch"), label="Pitch", marker='o')
-plt.show()
+# Plot results
+for dof in full_oswec.dofs:
+    plt.figure()
+    plt.plot(
+        omega_range,
+        data['added_mass'].sel(radiating_dof=dof, influenced_dof=dof),
+        label='Added Mass',
+        marker='o'
+    )
+    plt.plot(
+        omega_range,
+        data['radiation_damping'].sel(radiating_dof=dof, influenced_dof=dof),
+        label='Radiation Damping',
+        marker='o'
+    )
+    plt.xlabel('$\omega$')
+    plt.legend()
+    plt.title(dof)
+    #plt.savefig(dof + 'results.png', bbox_inches='tight')
+    plt.tight_layout()
+    plt.show()
 
-plt.figure()
-plt.plot(omega_range, data['radiation_damping'].sel(radiating_dof="Pitch"), label="Pitch", marker='o')
-plt.show()
+for dof in full_oswec.dofs:
+    plt.figure()
+    plt.plot(
+        omega_range,
+        np.abs(rao_data.sel(radiating_dof=dof))
+    )
+    plt.xlabel('$\omega$')
+    plt.ylabel('RAO')
+    plt.title(dof)
+    #plt.savefig(dof + 'rao_results.png', bbox_inches='tight')
+    plt.tight_layout()
+    plt.show()
