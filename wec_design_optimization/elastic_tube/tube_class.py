@@ -33,6 +33,8 @@ class ElasticTube(object):
         self.viscous_damping_parameter = pi * 8e-6
         self.wave_frequencies = np.linspace(0.1, 5.0, 50)
         self.thickness = 0.01 # units: {m}
+        self.fiber_pretension = 3.8e4  # From Energies 2020 paper doi:10.3390/en13205499
+        self.mooring_stiffness = 510.0  # From Journal of Fluids and Structures 2017 paper doi.org/10.1016/j.jfluidstructs.2017.06.003
 
         # Unpack independent design variables
         self.static_radius = tube_design_variables[0]
@@ -43,10 +45,11 @@ class ElasticTube(object):
         # Dependent geometry variables
         self.cross_sectional_area = pi * (self.static_radius ** 2)
         self.displaced_volume = pi * (self.static_radius ** 2) * self.length
+        self.system_mass = self.rho * self.displaced_volume  # TODO: add 2 * towhead masses
 
         # Dependent miscellaneous variables
         self.integration_bounds = [-self.length / 2, self.length / 2]
-        self.distensibility = 0.0  # TODO: make this dependent on elasticity and geometry design variables
+        self.distensibility = 2.248e-5  # TODO: make this dependent on elasticity and geometry design variables
         self.dissipation_coefficient = ((self.thickness * self.cross_sectional_area) / (self.rho * self.static_radius)) * self.power_take_off_damping
 
         # Dependent inertia variables
@@ -288,3 +291,29 @@ class ElasticTube(object):
         plt.ylabel('$P(\omega)$')
         plt.savefig('dissipated_power.png', bbox_inches='tight')
         
+    # From Babarit et al. 2017. Modal frequencies are the zeroes of both boundary condition functions
+    def _mode_type_1__boundary_conditions(self, w):  # TODO: change variable names for scoping
+        from math import sqrt, tanh, tan, pi
+
+        di = self.distensibility
+        ts = self.fiber_pretension
+
+        lowercase_wavenumber_1 = sqrt(((2 * pi) / (di * ts)) * (sqrt(1 + (ts * self.rho * (di ** 2) * (w ** 2) / pi)) - 1))
+        uppercase_wavenumber_1 = sqrt(((2 * pi) / (di * ts)) * (sqrt(1 + (ts * self.rho * (di ** 2) * (w ** 2) / pi)) + 1))
+        return (lowercase_wavenumber_1 * self.length / 2) * tanh(uppercase_wavenumber_1 * self.length / 2) \
+                - (uppercase_wavenumber_1 * self.length / 2) * tan(lowercase_wavenumber_1 * self.length / 2)
+
+    def _mode_type_2__boundary_conditions(self, w):
+        from math import sqrt, tanh, tan, pi
+        
+        di = self.distensibility
+        ts = self.fiber_pretension      
+
+        lowercase_wavenumber_2 = sqrt(((2 * pi) / (di * ts)) * (sqrt(1 + (ts * self.rho * (di ** 2) * (w ** 2) / pi)) - 1))
+        uppercase_wavenumber_2 = sqrt(((2 * pi) / (di * ts)) * (sqrt(1 + (ts * self.rho * (di ** 2) * (w ** 2) / pi)) + 1))
+        return (uppercase_wavenumber_2 * self.length / 2) * tanh(uppercase_wavenumber_2 * self.length / 2) \
+                + (lowercase_wavenumber_2 * self.length / 2) * tan(lowercase_wavenumber_2 * self.length / 2) \
+                - (((w ** 2) * self.rho * self.cross_sectional_area * self.length) / (-self.system_mass * (w ** 2) + 2 * self.mooring_stiffness)) \
+                * (uppercase_wavenumber_2 / lowercase_wavenumber_2 + lowercase_wavenumber_2 / uppercase_wavenumber_2) \
+                * tanh(uppercase_wavenumber_2 * self.length / 2) * tan(lowercase_wavenumber_2 * self.length / 2)
+
