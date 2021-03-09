@@ -218,7 +218,7 @@ class ElasticTube(object):
 
         return stiffness_matrix
 
-    def _find_modal_frequencies(self):
+    def _find_modal_frequencies(self, function_name):
         """Calculates the roots of the nonlinear dispersion relationship governing the elastic tube
         
         Args:
@@ -228,8 +228,34 @@ class ElasticTube(object):
             modal_frequency_array (np array): row of tube modal frequencies found from the dispersion relationship;
                                                 size is the number of modes mode_count
 
-        """
-        return np.ones(shape=self.mode_count)
+        """                    
+        import scipy.optimize
+
+        eps = 1e-3
+        reltol = 1e-3
+
+        # Calculate values of the dispersion relationship whose roots correspond to modal freuencies of the tube.
+        dispersion_function = np.linspace(self.wave_frequencies[0], self.wave_frequencies[-1], 1000)
+        k = 0
+        for frequency in self.wave_frequencies:
+            dispersion_function[k] = function_name(frequency)
+            k += 1
+
+        # Approximate roots by looking for changes in function sign. This is an appropriate method for this problem because all of the
+        # dispersion roots come from where the tan() function factor changes sign instead of something like a quadratic function with one root.
+        approximate_modal_frequency_list = []
+        exact_modal_frequency_list = []
+        for k in range(len(self.wave_frequencies) - 1):
+            if dispersion_function[k] * dispersion_function[k+1] <= 0.0:
+                approximate_modal_frequency_list.append(self.wave_frequencies[k])
+
+        # Use approximate roots as starting points for finding each actual root. Only accept a new root if it is both new and non-zero
+        for approximate_modal_frequency in approximate_modal_frequency_list:
+            exact_modal_frequency = scipy.optimize.fsolve(func=self._mode_type_1__boundary_conditions, x0=approximate_modal_frequency)[0]
+            if exact_modal_frequency > eps and not np.any(abs(exact_modal_frequency_list - exact_modal_frequency) / exact_modal_frequency < reltol):
+                exact_modal_frequency_list.append(exact_modal_frequency)
+
+        return exact_modal_frequency_list
 
     def _mode_shape_product(self, x, index_1, index_2):
         return self.mode_shapes(x, mode_number=index_1) \
@@ -290,8 +316,10 @@ class ElasticTube(object):
         plt.xlabel('$\omega$')
         plt.ylabel('$P(\omega)$')
         plt.savefig('dissipated_power.png', bbox_inches='tight')
-        
-    # From Babarit et al. 2017. Modal frequencies are the zeroes of both boundary condition functions
+
+    # From Babarit et al. 2017. Modal frequencies are the zeroes of both boundary condition functions.
+    # Note that due to the tan() components of each function, roots showing up on their graphs 
+    # may only be discontinuities instead of actual roots.
     def _mode_type_1__boundary_conditions(self, w):  # TODO: change variable names for scoping
         from math import sqrt, tanh, tan, pi
 
