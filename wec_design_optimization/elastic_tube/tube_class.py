@@ -127,17 +127,50 @@ class ElasticTube(object):
 
     def mode_shapes(self, x, mode_number):
         # Define chi(x)
-        from math import cos, pi
+        # k1 is lowercase k in A Barbarit et al.
+        # k2 is uppercase K in A Barbarit et al.
+        from math import sin, cos, tan, sinh, cosh, tanh
 
-        chi = -cos((mode_number + 1) * 2*pi*x / self.length) * (self.length / ((mode_number + 1) * 2 * pi))
+        # Find, modal frequency and modal wavenumbers
+        modal_frequency = self.mode_frequency_list[mode_number]
+        k1 = self.mode_lower_wavenumber_list[mode_number]
+        k2 = self.mode_upper_wavenumber_list[mode_number]
+        
+        # Mode type 1 as a function of x
+        if modal_frequency in self.mode_type_1_frequency_list:
+            c1 = tanh(k2 * self.length / 2) / cos(k1 * self.length / 2)
+            c2 = tan(k1 * self.length / 2) / cosh(k2 * self.length / 2)
+            chi = c1 * sin(k1 * x) - c2 * sinh(k2 * x)
+        # Mode type 2 as a function of x
+        elif modal_frequency in self.mode_type_2_frequency_list:
+            c3 = k2 * tanh(k2 * self.length / 2) / cos(k1 * self.length / 2)
+            c4 = k1 * tan(k1 * self.length / 2) / cosh(k2 * self.length / 2)
+            chi = c3 * cos(k1 * x) + c4 * cosh(k2 * x)
 
         return chi
 
     def mode_shape_derivatives(self, x, y, z, mode_number, integration_flag=False):
         # Defines del{chi}/del{x}(x)
-        from math import sin, pi
+        # k1 is lowercase k in A Barbarit et al.
+        # k2 is uppercase K in A Barbarit et al.
+        from math import sin, cos, tan, sinh, cosh, tanh
 
-        chi_dx = sin((mode_number + 1) * 2*pi*x / self.length)
+        modal_frequency = self.mode_frequency_list[mode_number]
+        k1 = self.mode_lower_wavenumber_list[mode_number]
+        k2 = self.mode_upper_wavenumber_list[mode_number]
+        
+        # Mode type 1 as a function of x
+        if modal_frequency in self.mode_type_1_frequency_list:
+            c1 = k1 * tanh(k2 * self.length / 2) / cos(k1 * self.length / 2)
+            c2 = k2 * tan(k1 * self.length / 2) / cosh(k2 * self.length / 2)
+            chi_dx = c1 * cos(k1 * x) - c2 * cosh(k2 * x)
+        # Mode type 2 as a function of x
+        elif modal_frequency in self.mode_type_2_frequency_list:
+            c3 = k1 * k2 * tanh(k2 * self.length / 2) / cos(k1 * self.length / 2)
+            c4 = k1 * k2 * tan(k1 * self.length / 2) / cosh(k2 * self.length / 2)
+            chi_dx = -c3 * sin(k1 * x) + c4 * sinh(k2 * x)
+
+        radial_deformation = (-self.static_radius / 2) * chi_dx
 
         if integration_flag:
             return chi_dx
@@ -145,8 +178,8 @@ class ElasticTube(object):
         # TODO: see if v and w need to be multiplied by (-self.radius / 2)
 
         u = 0.0
-        v = (y / self.static_radius) * chi_dx
-        w = ((z - self.submergence) / self.static_radius) * chi_dx
+        v = (y / self.static_radius) * radial_deformation
+        w = ((z - self.submergence) / self.static_radius) * radial_deformation
 
         return (u, v, w)
 
@@ -255,11 +288,10 @@ class ElasticTube(object):
 
         # Stores frequency and wavenumber lists for instance
         self.mode_type_1_frequency_list = mode_type_1_frequency_list
-        self.mode_type_2_frequency_list = mode_type_2_frequency_list        
-        self.mode_type_1_lower_wavenumber_list = mode_type_1_lower_wavenumber_list
-        self.mode_type_1_upper_wavenumber_list = mode_type_1_upper_wavenumber_list
-        self.mode_type_2_lower_wavenumber_list = mode_type_2_lower_wavenumber_list
-        self.mode_type_2_upper_wavenumber_list = mode_type_2_upper_wavenumber_list
+        self.mode_type_2_frequency_list = mode_type_2_frequency_list
+        self.mode_frequency_list = np.concatenate((mode_type_1_frequency_list, mode_type_2_frequency_list))
+        self.mode_lower_wavenumber_list = np.concatenate(mode_type_1_lower_wavenumber_list, mode_type_2_lower_wavenumber_list)
+        self.mode_upper_wavenumber_list = np.concatenate(mode_type_1_upper_wavenumber_list, mode_type_2_upper_wavenumber_list)
 
         return
 
@@ -278,28 +310,29 @@ class ElasticTube(object):
         """                    
         import scipy.optimize
 
-        # Calculate values of the dispersion relationship whose roots correspond to modal freuencies of the tube.
-        dispersion_function = np.linspace(self.wave_frequencies[0], self.wave_frequencies[-1], 1000)
+        # Calculate values of the dispersion relationship whose roots correspond to modal frequencies of the tube.
+        discretized_wave_frequencies = np.linspace(self.wave_frequencies[0], self.wave_frequencies[-1], 50)
+        dispersion_function = np.zeros_like(discretized_wave_frequencies)
         k = 0
-        for frequency in self.wave_frequencies:
+        for frequency in discretized_wave_frequencies:
             dispersion_function[k] = function_name(frequency)
             k += 1
 
         # Approximate roots by looking for changes in function sign. This is an appropriate method for this problem because all of the
         # dispersion roots come from where the tan() function factor changes sign instead of something like a quadratic function with one root.
-        approximate_modal_frequency_list = []
-        exact_modal_frequency_list = []
-        for k in range(len(self.wave_frequencies) - 1):
+        approximate_modal_frequency_list = np.asarray([])
+        exact_modal_frequency_list = np.asarray([])
+        for k in range(len(discretized_wave_frequencies) - 1):
             if dispersion_function[k] * dispersion_function[k+1] <= 0.0:
-                approximate_modal_frequency_list.append(self.wave_frequencies[k])
+                approximate_modal_frequency_list = np.append(approximate_modal_frequency_list, discretized_wave_frequencies[k])
 
         # Use approximate roots as starting points for finding each actual root. Only accept a new root if it is both new and non-zero
         for approximate_modal_frequency in approximate_modal_frequency_list:
             exact_modal_frequency = scipy.optimize.fsolve(func=function_name, x0=approximate_modal_frequency)[0]
             if exact_modal_frequency > eps and not np.any(abs(exact_modal_frequency_list - exact_modal_frequency) / exact_modal_frequency < reltol):
-                exact_modal_frequency_list.append(exact_modal_frequency)
+                exact_modal_frequency_list = np.append(exact_modal_frequency_list, exact_modal_frequency)
 
-        return np.array(exact_modal_frequency_list)
+        return exact_modal_frequency_list
 
     def _mode_shape_product(self, x, index_1, index_2):
         return self.mode_shapes(x, mode_number=index_1) \
