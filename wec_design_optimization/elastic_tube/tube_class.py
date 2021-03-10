@@ -82,8 +82,8 @@ class ElasticTube(object):
 
         # Add all elastic mode DOFs
         for k in range(self.mode_count):
-            key_name = 'bulge_mode_' + str(k+1)
-            tube.dofs[key_name] = np.array([self.mode_shape_derivatives(x, y, z, mode_number=k+1) for x, y, z in tube.mesh.faces_centers])    
+            key_name = 'Bulge Mode ' + str(k)
+            tube.dofs[key_name] = np.array([self.mode_shape_derivatives(x, y, z, mode_number=k) for x, y, z in tube.mesh.faces_centers])    
 
         tube.mass = tube.add_dofs_labels_to_matrix(self.mass_matrix())
         tube.dissipation = tube.add_dofs_labels_to_matrix(self.damping_matrix())
@@ -128,7 +128,7 @@ class ElasticTube(object):
         # Define chi(x)
         from math import cos, pi
 
-        chi = -cos(mode_number * 2*pi*x / self.length) * (self.length / (mode_number * 2 * pi))
+        chi = -cos((mode_number + 1) * 2*pi*x / self.length) * (self.length / ((mode_number + 1) * 2 * pi))
 
         return chi
 
@@ -136,7 +136,7 @@ class ElasticTube(object):
         # Defines del{chi}/del{x}(x)
         from math import sin, pi
 
-        chi_dx = sin(mode_number * 2*pi*x / self.length)
+        chi_dx = sin((mode_number + 1) * 2*pi*x / self.length)
 
         if integration_flag:
             return chi_dx
@@ -192,11 +192,11 @@ class ElasticTube(object):
 
         for k1 in range(self.mode_count):
             for k2 in range(self.mode_count):
-                wall_damping_matrix[k1][k2] = quad(func=self._mode_shape_derivative_product, a=self.integration_bounds[0], b=self.integration_bounds[1], args=(k1 + 1, k2 + 1))[0]
+                wall_damping_matrix[k1][k2] = quad(func=self._mode_shape_derivative_product, a=self.integration_bounds[0], b=self.integration_bounds[1], args=(k1, k2))[0]
 
         for k1 in range(self.mode_count):
             for k2 in range(self.mode_count):
-                inner_flow_damping_matrix[k1][k2] = quad(func=self._mode_shape_product, a=self.integration_bounds[0], b=self.integration_bounds[1], args=(k1 + 1, k2 + 1))[0]
+                inner_flow_damping_matrix[k1][k2] = quad(func=self._mode_shape_product, a=self.integration_bounds[0], b=self.integration_bounds[1], args=(k1, k2))[0]
 
         damping_matrix = self.rho * self.cross_sectional_area * self.dissipation_coefficient * wall_damping_matrix \
             + self.rho * self.viscous_damping_parameter * inner_flow_damping_matrix
