@@ -7,6 +7,7 @@ def evaluate_tube_design(design_variables):
 
         """
         elastic_tube_instance = ElasticTube(design_variables)
+        elastic_tube_instance.evaluate_modal_frequency_information()
         elastic_tube_instance.generate_tube()
         elastic_tube_instance.evaluate_tube_modal_response_amplitudes()
         elastic_tube_instance.evaluate_dissipated_power()
@@ -214,12 +215,12 @@ class ElasticTube(object):
             stiffness matrix (2d np array)
 
         """
-        modal_frequencies = self._find_modal_frequencies()
+        modal_frequencies = self._calculate_dispersion_roots()
         stiffness_matrix = self.displaced_mass * np.diag(modal_frequencies ** 2)
 
         return stiffness_matrix
 
-    def list_bounded_modal_frequencies(self):
+    def evaluate_modal_frequency_information(self):
         """Gathers information for both types of mode shapes by getting all modal frequencies in the bounds of self.omega_range.
         Finds only the lowest user specified integer number of modes.
 
@@ -231,8 +232,8 @@ class ElasticTube(object):
 
         """
         # Find all exact modal frequencies for each type of mode
-        mode_type_1_frequency_list = self._find_modal_frequencies(self._mode_type_1__boundary_conditions)
-        mode_type_2_frequency_list = self._find_modal_frequencies(self._mode_type_2__boundary_conditions)
+        mode_type_1_frequency_list = self._calculate_dispersion_roots(self._mode_type_1__boundary_conditions)
+        mode_type_2_frequency_list = self._calculate_dispersion_roots(self._mode_type_2__boundary_conditions)
 
         # Limit the number of modes to the user specified integer number by sorting all of them
         unsorted_mode_list = np.concatenate((mode_type_1_frequency_list, mode_type_2_frequency_list))
@@ -262,7 +263,7 @@ class ElasticTube(object):
 
         return
 
-    def _find_modal_frequencies(self, function_name, eps=1e-3, reltol=1e-3):
+    def _calculate_dispersion_roots(self, function_name, eps=1e-3, reltol=1e-3):
         """Calculates the roots of the nonlinear dispersion relationship governing the elastic tube
         
         Args:
