@@ -34,7 +34,8 @@ class ElasticTube(object):
         self.wave_frequencies = np.linspace(0.1, 5.0, 50)
         self.thickness = 0.01 # units: {m}
         self.fiber_pretension = 3.8e4  # From Energies 2020 paper doi:10.3390/en13205499
-        self.mooring_stiffness = 510.0  # From Journal of Fluids and Structures 2017 paper doi.org/10.1016/j.jfluidstructs.2017.06.003
+        self.mooring_stiffness = 510.0e3    # Froude scaled by a factor of 10 from the original value of 510.0 N/m in
+                                            # Journal of Fluids and Structures 2017 paper doi.org/10.1016/j.jfluidstructs.2017.06.003
 
         # Unpack independent design variables
         self.static_radius = tube_design_variables[0]
@@ -218,21 +219,63 @@ class ElasticTube(object):
 
         return stiffness_matrix
 
-    def _find_modal_frequencies(self, function_name):
-        """Calculates the roots of the nonlinear dispersion relationship governing the elastic tube
-        
+    def list_bounded_modal_frequencies(self):
+        """Gathers information for both types of mode shapes by getting all modal frequencies in the bounds of self.omega_range.
+        Finds only the lowest user specified integer number of modes.
+
         Args:
             None
 
         Returns:
+            None
+
+        """
+        # Find all exact modal frequencies for each type of mode
+        mode_type_1_frequency_list = self._find_modal_frequencies(self._mode_type_1__boundary_conditions)
+        mode_type_2_frequency_list = self._find_modal_frequencies(self._mode_type_2__boundary_conditions)
+
+        # Limit the number of modes to the user specified integer number by sorting all of them
+        unsorted_mode_list = np.concatenate((mode_type_1_frequency_list, mode_type_2_frequency_list))
+        sorted_mode_list = np.sort(unsorted_mode_list)
+        maximum_modal_frequency = sorted_mode_list[self.mode_count-1]
+        mode_type_1_frequency_list = mode_type_1_frequency_list[np.where(mode_type_1_frequency_list <= maximum_modal_frequency)]
+        mode_type_2_frequency_list = mode_type_2_frequency_list[np.where(mode_type_2_frequency_list <= maximum_modal_frequency)]
+
+        # Find wavenumbers for each modal frequency
+        mode_type_1_lower_wavenumber_list = np.zeros_like(mode_type_1_frequency_list)
+        mode_type_1_upper_wavenumber_list = np.zeros_like(mode_type_1_frequency_list)
+        mode_type_2_lower_wavenumber_list = np.zeros_like(mode_type_2_frequency_list)
+        mode_type_2_upper_wavenumber_list = np.zeros_like(mode_type_2_frequency_list)
+
+        for k in range(len(mode_type_1_frequency_list)):
+            mode_type_1_lower_wavenumber_list[k], mode_type_1_upper_wavenumber_list[k] = self._mode_type_1__boundary_conditions(mode_type_1_frequency_list[k], wavenumber_flag=True)
+        for k in range(len(mode_type_2_frequency_list)):
+            mode_type_2_lower_wavenumber_list[k], mode_type_2_upper_wavenumber_list[k] = self._mode_type_2__boundary_conditions(mode_type_2_frequency_list[k], wavenumber_flag=True)
+
+        # Stores frequency and wavenumber lists for instance
+        self.mode_type_1_frequency_list = mode_type_1_frequency_list
+        self.mode_type_2_frequency_list = mode_type_2_frequency_list        
+        self.mode_type_1_lower_wavenumber_list = mode_type_1_lower_wavenumber_list
+        self.mode_type_1_upper_wavenumber_list = mode_type_1_upper_wavenumber_list
+        self.mode_type_2_lower_wavenumber_list = mode_type_2_lower_wavenumber_list
+        self.mode_type_2_upper_wavenumber_list = mode_type_2_upper_wavenumber_list
+
+        return
+
+    def _find_modal_frequencies(self, function_name, eps=1e-3, reltol=1e-3):
+        """Calculates the roots of the nonlinear dispersion relationship governing the elastic tube
+        
+        Args:
+            function_name (callable): the dispersion function used to find modal frequencies w and wavenumbers k and K
+            eps (float): all found frequencies need be greater than eps to avoid finding zero  # TODO: consider changing to self.wavefrequencies[0]
+            reltol (float): all numerically found frequencies from each starting points need to (100 * reltol) percent different 
+                            from all found frequencies so far
+
+        Returns:
             modal_frequency_array (np array): row of tube modal frequencies found from the dispersion relationship;
                                                 size is the number of modes mode_count
-
         """                    
         import scipy.optimize
-
-        eps = 1e-3
-        reltol = 1e-3
 
         # Calculate values of the dispersion relationship whose roots correspond to modal freuencies of the tube.
         dispersion_function = np.linspace(self.wave_frequencies[0], self.wave_frequencies[-1], 1000)
@@ -251,11 +294,11 @@ class ElasticTube(object):
 
         # Use approximate roots as starting points for finding each actual root. Only accept a new root if it is both new and non-zero
         for approximate_modal_frequency in approximate_modal_frequency_list:
-            exact_modal_frequency = scipy.optimize.fsolve(func=self._mode_type_1__boundary_conditions, x0=approximate_modal_frequency)[0]
+            exact_modal_frequency = scipy.optimize.fsolve(func=function_name, x0=approximate_modal_frequency)[0]
             if exact_modal_frequency > eps and not np.any(abs(exact_modal_frequency_list - exact_modal_frequency) / exact_modal_frequency < reltol):
                 exact_modal_frequency_list.append(exact_modal_frequency)
 
-        return exact_modal_frequency_list
+        return np.array(exact_modal_frequency_list)
 
     def _mode_shape_product(self, x, index_1, index_2):
         return self.mode_shapes(x, mode_number=index_1) \
@@ -320,7 +363,7 @@ class ElasticTube(object):
     # From Babarit et al. 2017. Modal frequencies are the zeroes of both boundary condition functions.
     # Note that due to the tan() components of each function, roots showing up on their graphs 
     # may only be discontinuities instead of actual roots.
-    def _mode_type_1__boundary_conditions(self, w):  # TODO: change variable names for scoping
+    def _mode_type_1__boundary_conditions(self, w, wavenumber_flag=False):
         from math import sqrt, tanh, tan, pi
 
         di = self.distensibility
@@ -328,10 +371,14 @@ class ElasticTube(object):
 
         lowercase_wavenumber_1 = sqrt(((2 * pi) / (di * ts)) * (sqrt(1 + (ts * self.rho * (di ** 2) * (w ** 2) / pi)) - 1))
         uppercase_wavenumber_1 = sqrt(((2 * pi) / (di * ts)) * (sqrt(1 + (ts * self.rho * (di ** 2) * (w ** 2) / pi)) + 1))
+
+        if wavenumber_flag:
+            return lowercase_wavenumber_1, uppercase_wavenumber_1
+
         return (lowercase_wavenumber_1 * self.length / 2) * tanh(uppercase_wavenumber_1 * self.length / 2) \
                 - (uppercase_wavenumber_1 * self.length / 2) * tan(lowercase_wavenumber_1 * self.length / 2)
 
-    def _mode_type_2__boundary_conditions(self, w):
+    def _mode_type_2__boundary_conditions(self, w, wavenumber_flag=False):
         from math import sqrt, tanh, tan, pi
         
         di = self.distensibility
@@ -339,6 +386,10 @@ class ElasticTube(object):
 
         lowercase_wavenumber_2 = sqrt(((2 * pi) / (di * ts)) * (sqrt(1 + (ts * self.rho * (di ** 2) * (w ** 2) / pi)) - 1))
         uppercase_wavenumber_2 = sqrt(((2 * pi) / (di * ts)) * (sqrt(1 + (ts * self.rho * (di ** 2) * (w ** 2) / pi)) + 1))
+
+        if wavenumber_flag:
+            return lowercase_wavenumber_2, uppercase_wavenumber_2
+
         return (uppercase_wavenumber_2 * self.length / 2) * tanh(uppercase_wavenumber_2 * self.length / 2) \
                 + (lowercase_wavenumber_2 * self.length / 2) * tan(lowercase_wavenumber_2 * self.length / 2) \
                 - (((w ** 2) * self.rho * self.cross_sectional_area * self.length) / (-self.system_mass * (w ** 2) + 2 * self.mooring_stiffness)) \
