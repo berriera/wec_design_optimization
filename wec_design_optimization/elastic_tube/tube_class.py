@@ -8,6 +8,7 @@ def evaluate_tube_design(design_variables):
         """
         elastic_tube_instance = ElasticTube(design_variables)
         elastic_tube_instance.evaluate_modal_frequency_information()
+        elastic_tube_instance.normalize_mode_shapes()
         elastic_tube_instance.generate_tube()
         elastic_tube_instance.evaluate_tube_modal_response_amplitudes()
         elastic_tube_instance.evaluate_dissipated_power()
@@ -30,7 +31,7 @@ class ElasticTube(object):
         self.rho = 1025
         self.water_depth = -inf
         self.wave_direction = 0.0
-        self.mode_count = 5
+        self.mode_count = 4
         self.viscous_damping_parameter = pi * 8e-6
         self.wave_frequencies = np.linspace(0.1, 5.0, 50)
         self.thickness = 0.01 # units: {m}
@@ -149,7 +150,7 @@ class ElasticTube(object):
 
         return chi
 
-    def mode_shape_derivatives(self, x, y, z, mode_number, integration_flag=False):
+    def mode_shape_derivatives(self, x, y, z, mode_number, integration_flag=False, plot_flag=False):
         # Defines del{chi}/del{x}(x)
         # k1 is lowercase k in A Barbarit et al.
         # k2 is uppercase K in A Barbarit et al.
@@ -174,14 +175,35 @@ class ElasticTube(object):
 
         if integration_flag:
             return chi_dx
-
-        # TODO: see if v and w need to be multiplied by (-self.radius / 2)
+        if plot_flag:
+            return radial_deformation
 
         u = 0.0
         v = (y / self.static_radius) * radial_deformation
         w = ((z - self.submergence) / self.static_radius) * radial_deformation
 
         return (u, v, w)
+
+    def normalize_mode_shapes(self):
+        """Defines normalization factors for each modal frequency
+
+        Args:
+            None
+
+        Returns:
+            None
+
+        """
+        from scipy.integrate import quad
+
+        normalization_factor_matrix = np.zeros(shape=(self.mode_count, self.mode_count))
+        for k1 in range(self.mode_count):
+            for k2 in range(self.mode_count):
+                modal_product_integration = quad(func=self._mode_shape_product, a=self.integration_bounds[0], b=self.integration_bounds[1], args=(k1, k2))[0]
+                normalization_factor_matrix[k1][k2] = (1 / self.length) * modal_product_integration + (self.system_mass / self.displaced_mass) \
+                    * self.mode_shapes(self.integration_bounds[1], k1) * self.mode_shapes(self.integration_bounds[1], k2)
+        
+        self.normalization_factor_matrix = normalization_factor_matrix
 
     def mass_matrix(self):
         """Defines an n x n mass matrix for the tube, where n is the modal degrees of freedom
@@ -248,8 +270,7 @@ class ElasticTube(object):
             stiffness matrix (2d np array)
 
         """
-        modal_frequencies = self._calculate_dispersion_roots()
-        stiffness_matrix = self.displaced_mass * np.diag(modal_frequencies ** 2)
+        stiffness_matrix = self.displaced_mass * np.diag(self.mode_frequency_list ** 2)
 
         return stiffness_matrix
 
@@ -290,8 +311,8 @@ class ElasticTube(object):
         self.mode_type_1_frequency_list = mode_type_1_frequency_list
         self.mode_type_2_frequency_list = mode_type_2_frequency_list
         self.mode_frequency_list = np.concatenate((mode_type_1_frequency_list, mode_type_2_frequency_list))
-        self.mode_lower_wavenumber_list = np.concatenate(mode_type_1_lower_wavenumber_list, mode_type_2_lower_wavenumber_list)
-        self.mode_upper_wavenumber_list = np.concatenate(mode_type_1_upper_wavenumber_list, mode_type_2_upper_wavenumber_list)
+        self.mode_lower_wavenumber_list = np.concatenate((mode_type_1_lower_wavenumber_list, mode_type_2_lower_wavenumber_list))
+        self.mode_upper_wavenumber_list = np.concatenate((mode_type_1_upper_wavenumber_list, mode_type_2_upper_wavenumber_list))
 
         return
 
@@ -430,3 +451,24 @@ class ElasticTube(object):
                 * (uppercase_wavenumber_2 / lowercase_wavenumber_2 + lowercase_wavenumber_2 / uppercase_wavenumber_2) \
                 * tanh(uppercase_wavenumber_2 * self.length / 2) * tan(lowercase_wavenumber_2 * self.length / 2)
 
+    def plot_mode_shapes(self):
+        import matplotlib.pyplot as plt
+        from math import nan
+
+        plt.figure()
+        for mode_number in range(self.mode_count):
+            tube_x = np.linspace(self.integration_bounds[0], self.integration_bounds[1], 250)
+            tube_radial_deformation = np.zeros_like(tube_x)
+
+            k = 0
+            for x in tube_x:
+                tube_radial_deformation[k] = self.mode_shape_derivatives(x, y=nan, z=nan, mode_number=mode_number, plot_flag=True)
+                k += 1
+            plt.plot(tube_x, tube_radial_deformation, label='Mode {} ($\omega = {:.3f}$ rad/s)'.format(mode_number, self.mode_frequency_list[mode_number]))
+        
+        plt.xlabel('$x (m)$')
+        plt.ylabel('$\delta r (m)$')
+        plt.legend(bbox_to_anchor=(1,1), loc="upper left")
+        plt.savefig('mode_shapes.png', bbox_inches='tight')
+
+        return
