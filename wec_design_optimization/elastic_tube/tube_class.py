@@ -196,12 +196,11 @@ class ElasticTube(object):
         """
         from scipy.integrate import quad
 
-        normalization_factor_matrix = np.zeros(shape=(self.mode_count, self.mode_count))
-        for k1 in range(self.mode_count):
-            for k2 in range(self.mode_count):
-                modal_product_integration = quad(func=self._mode_shape_product, a=self.integration_bounds[0], b=self.integration_bounds[1], args=(k1, k2))[0]
-                normalization_factor_matrix[k1][k2] = (1 / self.length) * modal_product_integration + (self.system_mass / self.displaced_mass) \
-                    * self.mode_shapes(self.integration_bounds[1], k1) * self.mode_shapes(self.integration_bounds[1], k2)
+        normalization_factor_matrix = np.zeros(shape=self.mode_count)
+        for k in range(self.mode_count):
+            modal_product_integration = quad(func=self._mode_shape_product, a=self.integration_bounds[0], b=self.integration_bounds[1], args=(k, k))[0]
+            normalization_factor_matrix[k] = (1 / self.length) * modal_product_integration + (self.system_mass / self.displaced_mass) \
+                    * self.mode_shapes(self.integration_bounds[1], k) * self.mode_shapes(self.integration_bounds[1], k)
         
         self.normalization_factor_matrix = normalization_factor_matrix
 
