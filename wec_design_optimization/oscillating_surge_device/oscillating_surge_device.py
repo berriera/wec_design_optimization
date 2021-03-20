@@ -5,7 +5,6 @@ import capytaine.post_pro
 import numpy as np
 import logging
 import matplotlib.pyplot as plt
-import xarray
 
 os.system('cls')
 
@@ -33,6 +32,12 @@ def plate_flexure_mode_shape(x, y, z):
 # Set logger configuration
 logging.basicConfig(level=logging.INFO, format="%(levelname)s:\t%(message)s")
 
+# Material parameters
+density = 5000
+elastic_modulus = 1e6
+nu = 0.3
+
+
 # Create OSWEC mesh
 device_height = 10.0
 device_width = 6.0
@@ -41,14 +46,17 @@ base_height = 0.3
 depth = -10.0
 wave_direction = 0.0
 
+volume = device_width * device_height * device_thickness
+mass = density * volume
+
 omega_range = np.linspace(0.1, 5.0, 50)
 
-full_oswec = RectangularParallelepiped(size=(device_thickness, device_width, device_height),
+full_oswec = RectangularParallelepiped(size=(device_thickness, device_width, device_height + 2),
             resolution=(4, 40, 32),
             center = (0.0, 0.0, depth + base_height + device_height / 2))
 
 dissipation_matrix = np.zeros(shape=(2, 2))
-mass_matrix = 1e6 * np.eye(N=2)
+mass_matrix = mass * np.array([[1.0, 0.0], [0.0, 0.25]])
 stiffness_matrix = 1e5 * np.eye(N=2)
 
 # Add custom defined pitch axis about constrained axis
@@ -64,13 +72,13 @@ full_oswec.dissipation = full_oswec.add_dofs_labels_to_matrix(dissipation_matrix
 full_oswec.hydrostatic_stiffness = full_oswec.add_dofs_labels_to_matrix(stiffness_matrix)
 
 oswec = full_oswec.copy()
-oswec.keep_immersed_part()
-#full_oswec.show()
-#oswec.show()
+oswec.keep_immersed_part(sea_bottom=depth)
+full_oswec.show()
+oswec.show()
 
 # Animate rigid body pitch DOF along with modal flexure DOF
-#animation = full_oswec.animate(motion={'Pitch': 0.40, 'plate_flexure': 1.00}, loop_duration=6.0)
-#animation.run()
+animation = full_oswec.animate(motion={'Pitch': 0.40, 'Plate Flexure': 1.25}, loop_duration=6.0)
+animation.run()
 
 # Problem definition
 oswec_problems = [RadiationProblem(body=oswec,sea_bottom=depth, 
