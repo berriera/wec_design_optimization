@@ -4,7 +4,7 @@ import numpy as np
 class FlexibleColumn(object):
 
     def __init__(self, radius, height, elastic_modulus, density, logging=False):
-        from math import pi, sqrt
+        from math import pi
 
         # Constant wave conditions
         self.water_depth = -height
@@ -39,8 +39,8 @@ class FlexibleColumn(object):
 
         # Dependent modal values
         self.kappa_list = self.eigenvalue_list / self.height
-        self.modal_frequency_list = sqrt(((self.elastic_modulus * self.area_y_moment_of_inertia) / (self.density * self.cross_sectional_area)) \
-                                    * (self.kappa_list ** 4))
+        self.modal_frequency_list = np.sqrt(((self.elastic_modulus * self.area_y_moment_of_inertia) / (self.density * self.cross_sectional_area)) \
+                                        * (self.kappa_list ** 4))
         self.modal_period_list = (2 * pi) / self.modal_frequency_list
 
 
@@ -63,7 +63,7 @@ class FlexibleColumn(object):
 
         self.column_mesh = column
 
-    def cantilever_beam_flexure_mode_shape(self, x, y, z, mode_number):
+    def cantilever_beam_flexure_mode_shape(self, x, y, z, mode_number, plot_flag=False):
         from math import cosh, sinh, cos, sin
 
         eigenvalue = self.eigenvalue_list[mode_number]
@@ -77,6 +77,9 @@ class FlexibleColumn(object):
         u = (cosh(eigenvalue*q) - cos(eigenvalue*q) - c1*(sinh(eigenvalue*q) - sin(eigenvalue*q))) / end_displacement
         v = 0.0
         w = 0.0
+
+        if plot_flag:
+            return u
 
         return (u, v, w)
 
@@ -125,20 +128,22 @@ class FlexibleColumn(object):
 
         plt.figure()
         for mode_number in range(self.mode_count):
-            column_z = np.linspace(0, 1, 250)
+            column_q = np.linspace(0, 1, 250)
+            column_z = -self.height + column_q * self.height
             column_deformation = np.zeros_like(column_z)
 
             k = 0
             for z in column_z:
                 column_deformation[k] = self.cantilever_beam_flexure_mode_shape(x=nan, y=nan, z=z, mode_number=mode_number, plot_flag=True)
                 k += 1
-            plt.plot(column_z, column_deformation, label='Mode {} ($\omega = {:.3f}$ rad/s)'
+            plt.plot(column_deformation, column_q, label='Mode {} ($T = {:.3f}$ s)'
                     .format(mode_number, self.modal_period_list[mode_number]))
         
-        plt.xlabel('$z (m)$')
-        plt.ylabel('$\delta u (m)$')
+        plt.xlabel('$ q $')
+        plt.ylabel('$ f(q) $')
+        plt.xlim((-1, 1))
         plt.legend(bbox_to_anchor=(1,1), loc="upper left")
-        plt.savefig('mode_shapes.png', bbox_inches='tight')
+        plt.savefig('column_mode_shapes.png', bbox_inches='tight')
 
         return
 
@@ -197,6 +202,3 @@ class FlexibleColumn(object):
             # TODO: go off nearest wave frequency or interpolate between two neighbors
         animation = self.column_mesh.animate(motion=motion_dict, loop_duration=wave_period)
         animation.run()
-
-
-
