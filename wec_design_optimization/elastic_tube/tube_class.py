@@ -35,7 +35,7 @@ class ElasticTube(object):
         self.viscous_damping_parameter = pi * 8e-6
         self.wave_frequencies = np.linspace(0.1, 5.0, 50)
         self.thickness = 0.01 # units: {m}
-        self.fiber_pretension = 3.8e4  # From Energies 2020 paper doi:10.3390/en13205499
+        self.fiber_pretension = 1.8770e4  # From Energies 2020 paper doi:10.3390/en13205499
         self.mooring_stiffness = 510.0e3    # Froude scaled by a factor of 10 from the original value of 510.0 N/m in
                                             # Journal of Fluids and Structures 2017 paper doi.org/10.1016/j.jfluidstructs.2017.06.003
 
@@ -48,7 +48,8 @@ class ElasticTube(object):
         # Dependent geometry variables
         self.cross_sectional_area = pi * (self.static_radius ** 2)
         self.displaced_volume = pi * (self.static_radius ** 2) * self.length
-        self.system_mass = self.rho * self.displaced_volume  # TODO: add 2 * towhead masses
+        #self.system_mass = self.rho * self.displaced_volume  # TODO: add 2 * towhead masses
+        self.system_mass = 311.7
 
         # Dependent miscellaneous variables
         self.integration_bounds = [-self.length / 2, self.length / 2]
@@ -130,12 +131,16 @@ class ElasticTube(object):
         # Define chi(x)
         # k1 is lowercase k in A Barbarit et al.
         # k2 is uppercase K in A Barbarit et al.
-        from math import sin, cos, tan, sinh, cosh, tanh
+        from math import sin, cos, tan, sinh, cosh, tanh, sqrt
 
         # Find, modal frequency and modal wavenumbers
         modal_frequency = self.mode_frequency_list[mode_number]
         k1 = self.mode_lower_wavenumber_list[mode_number]
         k2 = self.mode_upper_wavenumber_list[mode_number]
+        try:
+            normalization_factor = self.normalization_factor_matrix[mode_number]
+        except:
+            normalization_factor = 1
         
         # Mode type 1 as a function of x
         if modal_frequency in self.mode_type_1_frequency_list:
@@ -147,6 +152,7 @@ class ElasticTube(object):
             c3 = k2 * tanh(k2 * self.length / 2) / cos(k1 * self.length / 2)
             c4 = k1 * tan(k1 * self.length / 2) / cosh(k2 * self.length / 2)
             chi = c3 * cos(k1 * x) + c4 * cosh(k2 * x)
+        chi = chi / sqrt(normalization_factor)
 
         return chi
 
@@ -154,11 +160,15 @@ class ElasticTube(object):
         # Defines del{chi}/del{x}(x)
         # k1 is lowercase k in A Barbarit et al.
         # k2 is uppercase K in A Barbarit et al.
-        from math import sin, cos, tan, sinh, cosh, tanh
+        from math import sin, cos, tan, sinh, cosh, tanh, sqrt
 
         modal_frequency = self.mode_frequency_list[mode_number]
         k1 = self.mode_lower_wavenumber_list[mode_number]
         k2 = self.mode_upper_wavenumber_list[mode_number]
+        try:
+            normalization_factor = self.normalization_factor_matrix[mode_number]
+        except:
+            normalization_factor = 1
         
         # Mode type 1 as a function of x
         if modal_frequency in self.mode_type_1_frequency_list:
@@ -170,6 +180,8 @@ class ElasticTube(object):
             c3 = k1 * k2 * tanh(k2 * self.length / 2) / cos(k1 * self.length / 2)
             c4 = k1 * k2 * tan(k1 * self.length / 2) / cosh(k2 * self.length / 2)
             chi_dx = -c3 * sin(k1 * x) + c4 * sinh(k2 * x)
+
+        chi_dx = chi_dx / sqrt(normalization_factor)
 
         radial_deformation = (-self.static_radius / 2) * chi_dx
 
@@ -331,7 +343,7 @@ class ElasticTube(object):
         import scipy.optimize
 
         # Calculate values of the dispersion relationship whose roots correspond to modal frequencies of the tube.
-        discretized_wave_frequencies = np.linspace(self.wave_frequencies[0], self.wave_frequencies[-1], 50)
+        discretized_wave_frequencies = np.linspace(self.wave_frequencies[0], self.wave_frequencies[-1], 1000)
         dispersion_function = np.zeros_like(discretized_wave_frequencies)
         k = 0
         for frequency in discretized_wave_frequencies:
