@@ -27,34 +27,44 @@ class ElasticTube(object):
 
         logging.basicConfig(level=logging.INFO, format="%(levelname)s:\t%(message)s")
 
-        # Constants
+        # Environment and incident wave constants
         self.rho = 1025
         self.water_depth = -inf
         self.wave_direction = 0.0
         self.mode_count = 4
-        self.viscous_damping_parameter = pi * 8e-6
         self.wave_frequencies = np.linspace(0.1, 5.0, 50)
-        self.thickness = 0.01 # units: {m}
-        self.fiber_pretension = 1.8770e4  # From Energies 2020 paper doi:10.3390/en13205499
+
+        # Tube material constants
+        self.viscous_damping_parameter = 8 * pi * 1e-6
+        self.thickness = 0.01
+        self.tube_density = 532.6
+        self.wall_stiffness = 9e5
+        self.material_damping_coefficient = 17.8e3 # {Pa * s}, also called B_{vis}
+        self.fiber_pretension = 3.8e4  # {N} From Energies 2020 paper doi:10.3390/en13205499
         self.mooring_stiffness = 510.0e3    # Froude scaled by a factor of 10 from the original value of 510.0 N/m in
                                             # Journal of Fluids and Structures 2017 paper doi.org/10.1016/j.jfluidstructs.2017.06.003
 
         # Unpack independent design variables
+        # Variable notation: r_s, L, z_s, B_{PTO}
         self.static_radius = tube_design_variables[0]
         self.length = tube_design_variables[1]
         self.submergence = tube_design_variables[2]
         self.power_take_off_damping = tube_design_variables[3]
 
         # Dependent geometry variables
+        # Variable notation: A, V, M
         self.cross_sectional_area = pi * (self.static_radius ** 2)
         self.displaced_volume = pi * (self.static_radius ** 2) * self.length
-        #self.system_mass = self.rho * self.displaced_volume  # TODO: add 2 * towhead masses
-        self.system_mass = 311.7
+        self.tube_mass = (2 * pi * self.static_radius * self.thickness * self.length) * self.tube_density
+        # TODO: add 2 * towhead masses if needed
 
         # Dependent miscellaneous variables
+        # Variable notation: [-L/2, L/2], D, B_{mat}, eta
         self.integration_bounds = [-self.length / 2, self.length / 2]
-        self.distensibility = 2.248e-5  # TODO: make this dependent on elasticity and geometry design variables
-        self.dissipation_coefficient = ((self.thickness * self.cross_sectional_area) / (self.rho * self.static_radius)) * self.power_take_off_damping
+        self.distensibility = (self.static_radius) * (self.thickness * self.cross_sectional_area * self.wall_stiffness)
+        self.wall_damping = (1 / (2 * self.cross_sectional_area)) * self.material_damping_coefficient
+        self.dissipation_coefficient = ((self.thickness * self.cross_sectional_area) / (self.rho * self.static_radius)) \
+            * (self.power_take_off_damping + self.wall_damping)
 
         # Dependent inertia variables
         self.displaced_mass = self.rho * self.displaced_volume
@@ -63,7 +73,7 @@ class ElasticTube(object):
         self.rotational_inertia_z_axis = self.rotational_inertia_y_axis
     
     def objective_function(self):
-        return np.sum(self.material_mean_power_dissipation) / self.displaced_volume
+        return np.sum(self.power_take_off_power_mean_power)
 
     def generate_tube(self):
         """Generates an elastic tube mesh with all attached rigid body (if relevant) and modal degrees of freedom
@@ -124,8 +134,12 @@ class ElasticTube(object):
             for k2 in range(self.mode_count):
                 total_damping_response += (modal_response_amplitudes[:, k1] * np.conjugate(modal_response_amplitudes[:, k2])).real * self.wall_damping_matrix[k1][k2]
         material_mean_power_dissipation = (1 / 2) * self.rho * self.cross_sectional_area * self.dissipation_coefficient * self.wave_frequencies * total_damping_response
+        power_take_off_power_mean_power = (self.power_take_off_damping / (self.power_take_off_damping + self.wall_damping)) \
+                                            * material_mean_power_dissipation
 
-        self.material_mean_power_dissipation = material_mean_power_dissipation
+        self.material_mean_total_power_dissipation = material_mean_power_dissipation
+        self.power_take_off_power_mean_power = power_take_off_power_mean_power
+
 
     def mode_shapes(self, x, mode_number):
         # Define chi(x)
@@ -211,7 +225,7 @@ class ElasticTube(object):
         normalization_factor_matrix = np.zeros(shape=self.mode_count)
         for k in range(self.mode_count):
             modal_product_integration = quad(func=self._mode_shape_product, a=self.integration_bounds[0], b=self.integration_bounds[1], args=(k, k))[0]
-            normalization_factor_matrix[k] = (1 / self.length) * modal_product_integration + (self.system_mass / self.displaced_mass) \
+            normalization_factor_matrix[k] = (1 / self.length) * modal_product_integration + (self.tube_mass / self.displaced_mass) \
                     * self.mode_shapes(self.integration_bounds[1], k) * self.mode_shapes(self.integration_bounds[1], k)
         
         self.normalization_factor_matrix = normalization_factor_matrix
@@ -419,11 +433,18 @@ class ElasticTube(object):
         plt.figure()
         plt.plot(
             self.wave_frequencies,
-            self.material_mean_power_dissipation,
-            marker='o'
+            self.material_mean_total_power_dissipation,
+            marker='o',
+            label='Material Power Dissipation'
         )
+        plt.plot(
+            self.wave_frequencies, 
+            self.power_take_off_power_mean_power,
+            marker='o',
+            label='PTO Power Dissipation')
         plt.xlabel('$\omega$')
         plt.ylabel('$P(\omega)$')
+        plt.legend()
         plt.savefig('dissipated_power.png', bbox_inches='tight')
 
     # From Babarit et al. 2017. Modal frequencies are the zeroes of both boundary condition functions.
@@ -458,7 +479,7 @@ class ElasticTube(object):
 
         return (uppercase_wavenumber_2 * self.length / 2) * tanh(uppercase_wavenumber_2 * self.length / 2) \
                 + (lowercase_wavenumber_2 * self.length / 2) * tan(lowercase_wavenumber_2 * self.length / 2) \
-                - (((w ** 2) * self.rho * self.cross_sectional_area * self.length) / (-self.system_mass * (w ** 2) + 2 * self.mooring_stiffness)) \
+                - (((w ** 2) * self.rho * self.cross_sectional_area * self.length) / (-self.tube_mass * (w ** 2) + 2 * self.mooring_stiffness)) \
                 * (uppercase_wavenumber_2 / lowercase_wavenumber_2 + lowercase_wavenumber_2 / uppercase_wavenumber_2) \
                 * tanh(uppercase_wavenumber_2 * self.length / 2) * tan(lowercase_wavenumber_2 * self.length / 2)
 
