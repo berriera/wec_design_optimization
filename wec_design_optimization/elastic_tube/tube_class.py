@@ -12,6 +12,7 @@ def evaluate_tube_design(design_variables):
         elastic_tube_instance.generate_tube()
         elastic_tube_instance.evaluate_tube_modal_response_amplitudes()
         elastic_tube_instance.evaluate_dissipated_power()
+        elastic_tube_instance.plot_mode_shapes()
         elastic_tube_instance.save_hydrodynamic_result_figures()
 
         objective_function_value = elastic_tube_instance.objective_function()
@@ -33,6 +34,7 @@ class ElasticTube(object):
         self.wave_direction = 0.0
         self.mode_count = 4
         self.wave_frequencies = np.linspace(0.1, 5.0, 50)
+        self.wave_height = 0.20
 
         # Tube material constants
         self.viscous_damping_parameter = 8 * pi * 1e-6
@@ -128,7 +130,7 @@ class ElasticTube(object):
             material_mean_power_dissipation (1d np array)
 
         """
-        modal_response_amplitudes = self.modal_response_amplitude_data
+        modal_response_amplitudes = self.wave_height * self.modal_response_amplitude_data
         total_damping_response = 0
         for k1 in range(self.mode_count):
             for k2 in range(self.mode_count):
@@ -136,7 +138,6 @@ class ElasticTube(object):
         material_mean_power_dissipation = (1 / 2) * self.rho * self.cross_sectional_area * self.dissipation_coefficient * self.wave_frequencies * total_damping_response
         power_take_off_power_mean_power = (self.power_take_off_damping / (self.power_take_off_damping + self.wall_damping)) \
                                             * material_mean_power_dissipation
-
         self.material_mean_total_power_dissipation = material_mean_power_dissipation
         self.power_take_off_power_mean_power = power_take_off_power_mean_power
 
@@ -231,7 +232,7 @@ class ElasticTube(object):
         self.normalization_factor_matrix = normalization_factor_matrix
 
     def mass_matrix(self):
-        """Defines an n x n mass matrix for the tube, where n is the modal degrees of freedom
+        """Defines an (6+n) x (6+n) mass matrix for the tube, where n is the modal degrees of freedom
 
         Args:
             None
@@ -243,8 +244,8 @@ class ElasticTube(object):
         mass_matrix = self.displaced_mass * np.ones(shape = self.mode_count)
         mass_matrix = np.diag(mass_matrix)
      
-        #elif self.rigid_body_degrees_of_freedom ==  6:
-        #        
+        #rigid_body_mass_matrix = 
+
         #    for k in [0, 1, 2]:
         #        mass_matrix[k][k] = self.displaced_mass
         #    mass_matrix[3][3] = self.rotational_inertia_x_axis
@@ -447,6 +448,20 @@ class ElasticTube(object):
         plt.legend()
         plt.savefig('dissipated_power.png', bbox_inches='tight')
 
+        plt.figure()
+        for dof in self.tube.dofs:
+            plt.plot(
+                self.wave_frequencies,
+                np.abs(self.modal_response_amplitude_data.sel(radiating_dof=dof)).data,
+                #np.abs(data['RAO'].sel(radiating_dof=dof).data),
+                marker='o',
+                label=dof
+        )
+        plt.xlabel('omega')
+        plt.ylabel('RAO')
+        plt.legend()
+        plt.savefig('response_amplitude_operator.png', bbox_inches='tight')
+
     # From Babarit et al. 2017. Modal frequencies are the zeroes of both boundary condition functions.
     # Note that due to the tan() components of each function, roots showing up on their graphs 
     # may only be discontinuities instead of actual roots.
@@ -501,6 +516,6 @@ class ElasticTube(object):
         plt.xlabel('$x (m)$')
         plt.ylabel('$\delta r (m)$')
         plt.legend(bbox_to_anchor=(1,1), loc="upper left")
-        plt.savefig('mode_shapes.png', bbox_inches='tight')
+        plt.savefig('tube_mode_shapes.png', bbox_inches='tight')
 
         return
