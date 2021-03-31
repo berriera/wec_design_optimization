@@ -93,7 +93,7 @@ class ElasticTube(object):
         tube.keep_immersed_part()
 
         # Add all rigid DOFs
-        #tube.add_all_rigid_body_dofs()
+        tube.add_all_rigid_body_dofs()
 
         # Add all elastic mode DOFs
         for k in range(self.mode_count):
@@ -134,7 +134,7 @@ class ElasticTube(object):
         total_damping_response = 0
         for k1 in range(self.mode_count):
             for k2 in range(self.mode_count):
-                total_damping_response += (modal_response_amplitudes[:, k1] * np.conjugate(modal_response_amplitudes[:, k2])).real * self.wall_damping_matrix[k1][k2]
+                total_damping_response += (modal_response_amplitudes[:, 6+k1] * np.conjugate(modal_response_amplitudes[:, 6+k2])).real * self.wall_damping_matrix[6+k1][6+k2]
         material_mean_power_dissipation = (1 / 2) * self.rho * self.cross_sectional_area * self.dissipation_coefficient * self.wave_frequencies * total_damping_response
         power_take_off_power_mean_power = (self.power_take_off_damping / (self.power_take_off_damping + self.wall_damping)) \
                                             * material_mean_power_dissipation
@@ -241,24 +241,19 @@ class ElasticTube(object):
             mass_matrix (2d np array)
 
         """
-        mass_matrix = self.displaced_mass * np.ones(shape = self.mode_count)
+        rigid_body_mass_matrix = np.array([self.displaced_mass, self.displaced_mass, self.displaced_mass,
+                                            self.rotational_inertia_x_axis,
+                                            self.rotational_inertia_y_axis,
+                                            self.rotational_inertia_z_axis
+                                            ])
+        modal_mass_matrix = self.displaced_mass * np.ones(shape=self.mode_count)
+        mass_matrix = np.concatenate((rigid_body_mass_matrix, modal_mass_matrix), axis=0)
         mass_matrix = np.diag(mass_matrix)
-     
-        #rigid_body_mass_matrix = 
-
-        #    for k in [0, 1, 2]:
-        #        mass_matrix[k][k] = self.displaced_mass
-        #    mass_matrix[3][3] = self.rotational_inertia_x_axis
-        #    mass_matrix[4][4] = self.rotational_inertia_y_axis
-        #    mass_matrix[5][5] = self.rotational_inertia_z_axis        
-        #
-        #    for k in range(6, 6 + self.mode_count):
-        #        mass_matrix[k][k] = self.displaced_mass
 
         return mass_matrix
 
     def damping_matrix(self):
-        """Defines an n x n damping matrix for the tube's modal degrees of freedom
+        """Defines an (6+n) x (6+n) damping matrix for the tube's modal degrees of freedom
 
         Args:
             None
@@ -269,16 +264,16 @@ class ElasticTube(object):
         """
         from scipy.integrate import quad
 
-        wall_damping_matrix = np.zeros(shape=(self.mode_count, self.mode_count))
-        inner_flow_damping_matrix = np.zeros(shape=(self.mode_count, self.mode_count))
+        wall_damping_matrix = np.zeros(shape=(6 + self.mode_count, 6 + self.mode_count))
+        inner_flow_damping_matrix = np.zeros(shape=(6 + self.mode_count, 6 + self.mode_count))
 
         for k1 in range(self.mode_count):
             for k2 in range(self.mode_count):
-                wall_damping_matrix[k1][k2] = quad(func=self._mode_shape_derivative_product, a=self.integration_bounds[0], b=self.integration_bounds[1], args=(k1, k2))[0]
+                wall_damping_matrix[6+k1][6+k2] = quad(func=self._mode_shape_derivative_product, a=self.integration_bounds[0], b=self.integration_bounds[1], args=(k1, k2))[0]
 
         for k1 in range(self.mode_count):
             for k2 in range(self.mode_count):
-                inner_flow_damping_matrix[k1][k2] = quad(func=self._mode_shape_product, a=self.integration_bounds[0], b=self.integration_bounds[1], args=(k1, k2))[0]
+                inner_flow_damping_matrix[6+k1][6+k2] = quad(func=self._mode_shape_product, a=self.integration_bounds[0], b=self.integration_bounds[1], args=(k1, k2))[0]
 
         damping_matrix = self.rho * self.cross_sectional_area * self.dissipation_coefficient * wall_damping_matrix \
             + self.rho * self.viscous_damping_parameter * inner_flow_damping_matrix
@@ -287,7 +282,7 @@ class ElasticTube(object):
         return damping_matrix
 
     def stiffness_matrix(self):
-        """Defines an n x n stiffness matrix for the tube's modal degrees of freedom
+        """Defines an (6+n) x (6+n) stiffness matrix for the tube's modal degrees of freedom
 
         Args:
             None
@@ -296,7 +291,16 @@ class ElasticTube(object):
             stiffness matrix (2d np array)
 
         """
-        stiffness_matrix = self.displaced_mass * np.diag(self.mode_frequency_list ** 2)
+        # Generate diagonal of stiffness matrix
+        # The rigid body matrices do not really matter here for assessing power since we are only evaluating the power
+        # generation due to modal response amplitudes. Only the off-diagonal rigid body and modal matrix interaction terms
+        # matter here, and those stiffness terms are zero.
+        rigid_body_stiffness_matrix = np.zeros(shape=6)
+        rigid_body_stiffness_matrix[0] = 2 * self.mooring_stiffness
+        modal_stiffness_matrix = self.displaced_mass * (self.mode_frequency_list ** 2)
+
+        stiffness_matrix = np.concatenate((rigid_body_stiffness_matrix, modal_stiffness_matrix))
+        stiffness_matrix = np.diag(stiffness_matrix)
 
         return stiffness_matrix
 
