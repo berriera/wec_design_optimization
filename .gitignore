@@ -2,6 +2,9 @@
 *.png
 *.jpg
 
+# Hydrodynamic result files
+*.nc
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
