@@ -27,13 +27,14 @@ class ElasticTube(object):
         from math import inf, pi
 
         logging.basicConfig(level=logging.INFO, format="%(levelname)s:\t%(message)s")
+        self.save_results = True
 
         # Environment and incident wave constants
         self.rho = 1025
         self.water_depth = -inf
         self.wave_direction = 0.0
         self.mode_count = 4
-        self.wave_frequencies = np.linspace(0.1, 5.0, 50)
+        self.wave_frequencies = np.linspace(0.3, 2.0, 20)
         self.wave_height = 0.20
 
         # Tube material constants
@@ -75,7 +76,31 @@ class ElasticTube(object):
         self.rotational_inertia_z_axis = self.rotational_inertia_y_axis
     
     def objective_function(self):
-        return np.sum(self.power_take_off_power_mean_power)
+        import scipy.io
+        import scipy.interpolate
+
+        from math import pi
+
+        wave_data = scipy.io.loadmat(r'C:/Users/13365/OneDrive/ocean_research/NREL_work/NREL_WAMIT_tube_files/Flex_WEC/unsorted_files_from_Jennifer/T_Prob_Dist.mat')
+        
+        wave_periods = np.array(wave_data['Ta'][0])
+        wave_probabilities = 0.01 * np.array(wave_data['Pa'][0])
+        wave_frequencies = (2 * pi) / wave_periods
+
+        frequency_probability_function = scipy.interpolate.interp1d(wave_frequencies, wave_probabilities)
+
+        frequency_probabilities = np.zeros_like(self.wave_frequencies)
+        k = 0
+        for omega in self.wave_frequencies:
+            frequency_probabilities[k] = frequency_probability_function(omega)
+            k += 1
+
+        power_mean = np.sum(self.power_take_off_power_mean_power * frequency_probabilities)
+        power_variance = np.sum((self.power_take_off_power_mean_power - power_mean) ** 2)
+        power_standard_deviation = power_variance ** (1/2)
+
+        # TODO: rename self.power_take_off_power_mean_power
+        return - 1.0 * power_mean
 
     def generate_tube(self):
         """Generates an elastic tube mesh with all attached rigid body (if relevant) and modal degrees of freedom
@@ -115,7 +140,14 @@ class ElasticTube(object):
         problems += [cpt.DiffractionProblem(omega=omega, body=self.tube, wave_direction=self.wave_direction) for omega in self.wave_frequencies]
         results = [solver.solve(problem) for problem in problems]
         result_data = cpt.assemble_dataset(results)
-        modal_response_amplitude_data = cpt.post_pro.rao(result_data, wave_direction=self.wave_direction)
+        modal_response_amplitude_data = cpt.post_pro.rao(result_data, wave_direction=self.wave_direction, dissipation=self.tube.dissipation)
+
+        if self.save_results:
+            from capytaine.io.xarray import separate_complex_values
+            separate_complex_values(result_data).to_netcdf('flexible_tube_results.nc',
+                                    encoding={'radiating_dof': {'dtype': 'U'},
+                                    'influenced_dof': {'dtype': 'U'}}
+                                    )
 
         self.result_data = result_data
         self.modal_response_amplitude_data = modal_response_amplitude_data
