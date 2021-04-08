@@ -81,18 +81,17 @@ class ElasticTube(object):
 
         from math import pi
 
-        wave_data = scipy.io.loadmat(r'C:/Users/13365/OneDrive/ocean_research/NREL_work/NREL_WAMIT_tube_files/Flex_WEC/unsorted_files_from_Jennifer/T_Prob_Dist.mat')
+        wave_data = scipy.io.loadmat(r'wec_design_optimization/elastic_tube/period_probability_distribution.mat')
         
         wave_periods = np.array(wave_data['Ta'][0])
         wave_probabilities = 0.01 * np.array(wave_data['Pa'][0])
-        wave_frequencies = (2 * pi) / wave_periods
 
-        frequency_probability_function = scipy.interpolate.interp1d(wave_frequencies, wave_probabilities)
+        wave_period_probability_function = scipy.interpolate.interp1d(wave_periods, wave_probabilities, bounds_error=False, fill_value=0.0)
 
         frequency_probabilities = np.zeros_like(self.wave_frequencies)
         k = 0
         for omega in self.wave_frequencies:
-            frequency_probabilities[k] = frequency_probability_function(omega)
+            frequency_probabilities[k] = wave_period_probability_function((2 * pi) / omega)
             k += 1
 
         power_mean = np.sum(self.power_take_off_power_mean_power * frequency_probabilities)
