@@ -13,12 +13,7 @@ def evaluate_tube_design(design_variables):
         elastic_tube_instance.generate_tube()
         elastic_tube_instance.solve_tube_hydrodynamics()
         damping_value, objective_function_value = elastic_tube_instance.optimize_damping()
-        print('\nOptimal damping value = {:.2f}'.format(damping_value))
-        #elastic_tube_instance.evaluate_dissipated_power()
-        #elastic_tube_instance.plot_mode_shapes()
-        #elastic_tube_instance.save_hydrodynamic_result_figures()
-        #elastic_tube_instance.plot_dissipated_power_statistics()
-        #objective_function_value = elastic_tube_instance.objective_function()
+        print('\tOptimal damping value = {:.2f}'.format(damping_value))
 
         return objective_function_value
 
@@ -39,10 +34,10 @@ class ElasticTube(object):
         self.submergence = tube_design_variables[2]
 
         # Environment and incident wave constants
-        self.rho = 1025
+        self.rho = 1000
         self.water_depth = -inf
         self.wave_direction = 0.0
-        self.mode_count = 15
+        self.mode_count = 5
         self.wave_periods = np.linspace(3.2409, 17.8155, 82)
         self.wave_frequencies = (2 * pi) / self.wave_periods
         self.wave_height = 1.0
@@ -50,7 +45,7 @@ class ElasticTube(object):
 
         # Tube material constants
         self.viscous_damping_parameter = 8 * pi * 1e-6
-        self.thickness = 0.01
+        self.thickness = 0.1
         self.tube_density = 532.6
         self.wall_stiffness = 9e5
         self.material_damping_coefficient = 17.8e3 # {Pa * s}, also called B_{vis}
@@ -125,7 +120,7 @@ class ElasticTube(object):
             tube (an instance of a Capytaine FloatingBody)
 
         """
-        print('Generating tube.')
+        print('\tGenerating tube.')
         tube = cpt.HorizontalCylinder(
             radius=self.static_radius, length=self.length, center=(0, 0, self.submergence),
             nx=int(self.length), ntheta=20, nr=int(self.static_radius / 0.2), clever=False)
@@ -150,7 +145,7 @@ class ElasticTube(object):
         """
 
         """
-        print('Solving tube hydrodynamics.')
+        print('\tSolving tube hydrodynamics.')
 
         solver = cpt.BEMSolver()
         problems = [cpt.RadiationProblem(omega=omega, body=self.tube, radiating_dof=dof) for dof in self.tube.dofs for omega in self.wave_frequencies]
@@ -185,10 +180,12 @@ class ElasticTube(object):
     def optimize_damping(self):
         from scipy.optimize import minimize_scalar
 
-        print('Optimizing damping value.')
+        print('\tOptimizing damping value.')
         damping_optimization_result = minimize_scalar(self._optimal_damping, method='golden')
         optimal_damping = damping_optimization_result.x
         optimal_objective_function = damping_optimization_result.fun
+
+        self.optimal_damping_value = optimal_damping
 
         return optimal_damping, optimal_objective_function
 
@@ -232,8 +229,6 @@ class ElasticTube(object):
             for k2 in range(self.mode_count):
                 index_1 = 'Bulge Mode ' + str(k1)
                 index_2 = 'Bulge Mode ' + str(k2)
-                #total_damping_response += (modal_response_amplitudes[:, self.rigid_dofs+k1] * np.conjugate(modal_response_amplitudes[:, self.rigid_dofs+k2])).real \
-                #                            * self.wall_damping_matrix[self.rigid_dofs+k1][self.rigid_dofs+k2]
                 total_damping_response += (modal_response_amplitudes.sel(radiating_dof=index_1) * np.conjugate(modal_response_amplitudes.sel(radiating_dof=index_2))).real \
                                             * self.wall_damping_matrix[self.rigid_dofs+k1][self.rigid_dofs+k2]
 
@@ -397,10 +392,10 @@ class ElasticTube(object):
             stiffness matrix (2d np array)
 
         """
-        # Generate diagonal of stiffness matrix
+        # Generate diagonal stiffness matrix
         # The rigid body matrices do not really matter here for assessing power since we are only evaluating the power
-        # generation due to modal response amplitudes. Only the off-diagonal rigid body and modal matrix interaction terms
-        # matter here, and those stiffness terms are zero.
+        # generation due to modal response amplitudes. Adding the surge mode only appears to have a minimal impact on 
+        # assessing a design's produced power.
         rigid_body_stiffness_matrix = np.zeros(shape=self.rigid_dofs)
         #rigid_body_stiffness_matrix[0] = 2 * self.mooring_stiffness
         #rigid_body_stiffness_matrix[1:5] = 0
@@ -429,6 +424,11 @@ class ElasticTube(object):
         # Limit the number of modes to the user specified integer number by sorting all of them
         unsorted_mode_list = np.concatenate((mode_type_1_frequency_list, mode_type_2_frequency_list))
         sorted_mode_list = np.sort(unsorted_mode_list)
+
+        # Error catching if less modes exist than modeled
+        if len(sorted_mode_list) < self.mode_count:
+            self.mode_count = len(sorted_mode_list)
+
         maximum_modal_frequency = sorted_mode_list[self.mode_count-1]
         mode_type_1_frequency_list = mode_type_1_frequency_list[np.where(mode_type_1_frequency_list <= maximum_modal_frequency)]
         mode_type_2_frequency_list = mode_type_2_frequency_list[np.where(mode_type_2_frequency_list <= maximum_modal_frequency)]
@@ -501,17 +501,7 @@ class ElasticTube(object):
         from math import nan
         return self.mode_shape_derivatives(x, y=nan, z=nan, mode_number=index_1, integration_flag=True) \
             * self.mode_shape_derivatives(x, y=nan, z=nan, mode_number=index_2, integration_flag=True)
-
-    def log_history(self):
-        """Records all design variables and objective function values in saved text files
-        
-        """
-        import time
-        
-        # TODO: save vars in a dictionary
-        # TODO: save dictionary to .txt file
-
-        pass
+    
 
     def save_hydrodynamic_result_figures(self):
         import matplotlib.pyplot as plt
@@ -544,12 +534,6 @@ class ElasticTube(object):
         plt.savefig('radiation_damping.png', bbox_inches='tight')
 
         plt.figure()
-        #plt.plot(
-        #    self.wave_frequencies,
-        #    self.material_mean_total_power_dissipation,
-        #    marker='o',
-        #    label='Material Power Dissipation'
-        #)
         plt.plot(
             self.wave_frequencies, 
             self.power_take_off_power_mean_power,
@@ -565,7 +549,6 @@ class ElasticTube(object):
                 plt.plot(
                     self.wave_frequencies,
                     np.abs(self.modal_response_amplitude_data.sel(radiating_dof=dof)).data,
-                    #np.abs(data['RAO'].sel(radiating_dof=dof).data),
                     label=dof
             )
         plt.xlabel('$\omega$ (rad/s)')
@@ -634,7 +617,7 @@ class ElasticTube(object):
     def plot_dissipated_power_statistics(self):
         import matplotlib.pyplot as plt
 
-        damping_values = np.linspace(0, 3e7, 200)
+        damping_values = np.linspace(0, 3e6, 200)
         power_mean_values = np.zeros_like(damping_values)
         power_standard_deviation_values = np.zeros_like(damping_values)
 
@@ -655,6 +638,13 @@ class ElasticTube(object):
 
         plt.figure()
         plt.plot(0.001 * damping_values, 0.001 * power_mean_values)
-        plt.xlabel('Power Take Off Damping Value (kPa $ \cdot $ s /m$^2$)')
-        plt.ylabel('Dissipated PTO Power [kW]')
+        plt.xlabel('Power Take Off Damping Value (kPa $ \cdot $ s /m$^2$)', fontsize=14)
+        plt.ylabel('Dissipated PTO Power (kW)', fontsize=14)
+
+        self._optimal_damping(self.optimal_damping_value)
+        plt.vlines(x=1e-3 * self.optimal_damping_value, ymin=0, ymax=0.001 * self.power_mean, linestyles='dashed')
+        plt.scatter([1e-3*self.optimal_damping_value], [0.001*self.power_mean], marker='*', s=150)
+        plt.xlim((0, 3000))
+        plt.ylim((0, 12))
+
         plt.show()
