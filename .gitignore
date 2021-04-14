@@ -5,6 +5,9 @@
 # Hydrodynamic result files
 *.nc
 
+# Optimization logging files
+*.pkl
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
