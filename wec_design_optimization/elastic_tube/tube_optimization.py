@@ -7,39 +7,38 @@ def obj_func(x):
     return (x[0] - 5.0) ** 2 + (x[1] - 30.0) ** 2 + (x[2] + 10) ** 2
 
 # Design variables in order: 
-#   static_radius
-#   length 
-#   submergence
-#   power_take_off_damping
-#   wall_stiffness
-#   fiber_pretension
+#   static_radius r_s
+#   length L
+#   submergence z_s
+#   wall_stiffness K_{mat}
+#   fiber_pretension T_s
 
 # Initialize starting location and objective function value
-#current_location = np.array([0.9, 60, -1.25])
-current_location = np.array([9e5, 3.8e4])
+current_location = np.array([0.9, 60, -1.25])
+#current_location = np.array([9e5, 3.8e4])
 current_objective_value = evaluate_tube_design(current_location)
 #current_objective_value = obj_func(current_location)
 
 # Set up move matrix for geometry optimization
-#variable_count = 3
-#moves_list = np.eye(N=variable_count)
-#moves_list[0][0] = 0.1
-#moves_list[1][1] = 2.5
-#moves_list[2][2] = 0.25
+variable_count = 3
+moves_list = np.eye(N=variable_count)
+moves_list[0][0] = 0.1
+moves_list[1][1] = 2.5
+moves_list[2][2] = 0.25
 
 # Set up move matrix for material optimization
 # Variable notation: K_{mat}, T_s
-variable_count = 2
-moves_list = np.eye(N=variable_count)
-moves_list[0][0] = 50.0e3
-moves_list[1][1] = 2.0e3
+#variable_count = 2
+#moves_list = np.eye(N=variable_count)
+#moves_list[0][0] = 50.0e3
+#moves_list[1][1] = 2.0e3
 
 
 # Initialize history variables
 location_history = []
 function_history = []
 converged = False
-iteration_count = 0
+iteration_count = 1
 
 # Set up first history values
 location_history.append(current_location)
@@ -53,12 +52,12 @@ move_multiplier = 16
 
 def check_bounds(potential_design):
     # Bounds for geometry optimization
-    #upper_bounds = np.array([10.0, 200.0, -0.1])
-    #lower_bounds = np.array([0.1, 20.0, -25.0])
+    upper_bounds = np.array([10.0, 200.0, 10.0])
+    lower_bounds = np.array([0.1, 20.0, -25.0])
 
     # Bounds for material optimization
-    upper_bounds = np.array([100.0, 3000.0])
-    lower_bounds = np.array([10.0, 200.0])
+    #upper_bounds = np.array([100.0, 3000.0])
+    #lower_bounds = np.array([10.0, 200.0])
 
     return np.all(potential_design <= upper_bounds) and np.all(potential_design >= lower_bounds)
 
@@ -66,9 +65,9 @@ def check_bounds(potential_design):
 def check_constraints(potential_design):
     from math import fabs
     static_radius = potential_design[0]
-    submergence = fabs(potential_design[2])
+    submergence = potential_design[2]
 
-    return submergence >= static_radius
+    return submergence < -static_radius
 
 
 while not converged:
@@ -79,15 +78,15 @@ while not converged:
     # Update design variables
     new_location = current_location + movement
 
-    # Check bounds first
+    # Check bounds first and constraint if relevant
     bounds_check = check_bounds(new_location)
-    constraint_check = check_constraints(new_location)
+    #constraint_check = check_constraints(new_location)
 
     # Try new move if in bounds
-    if bounds_check and constraint_check:
+    if bounds_check:
         iteration_count = iteration_count + 1
 
-        print('Iteration number: ', iteration_count)
+        print('New design is in bounds. Evaluating iteration number: ', iteration_count)
         print('\n\tWith design variables: ', new_location)
 
         new_objective_value = evaluate_tube_design(new_location)

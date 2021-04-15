@@ -1,3 +1,4 @@
+from math import pi
 import numpy as np
 import capytaine as cpt
 import logging
@@ -7,6 +8,11 @@ def evaluate_tube_design(design_variables):
 
         """
         elastic_tube_instance = ElasticTube(design_variables)
+
+        # Return 0 power if the entire tube is above the free surface
+        if design_variables[2] >= design_variables[0]:
+            return 0.0
+
         elastic_tube_instance.load_environmental_data()
         elastic_tube_instance.evaluate_modal_frequency_information()
         elastic_tube_instance.normalize_mode_shapes()
@@ -29,18 +35,18 @@ class ElasticTube(object):
 
         # Unpack independent design variables
         # Variable notation: r_s, L, z_s
-        #self.static_radius = tube_design_variables[0]
-        #self.length = tube_design_variables[1]
-        #self.submergence = tube_design_variables[2]
+        self.static_radius = tube_design_variables[0]
+        self.length = tube_design_variables[1]
+        self.submergence = tube_design_variables[2]
 
         # Unpack independent design variables for material optimization
-        self.wall_stiffness = tube_design_variables[0]
-        self.fiber_pretension = tube_design_variables[1]
+        #self.wall_stiffness = tube_design_variables[0]
+        #self.fiber_pretension = tube_design_variables[1]
 
         # Fixed geometry for material optimization
-        self.static_radius = 0.9
-        self.length = 60.0
-        self.submergence = -1.25
+        #self.static_radius = 0.9
+        #self.length = 60.0
+        #self.submergence = -1.25
 
         # Environment and incident wave constants
         self.rho = 1000
@@ -56,9 +62,9 @@ class ElasticTube(object):
         self.viscous_damping_parameter = 8 * pi * 1e-6
         self.thickness = 0.1
         self.tube_density = 532.6
-        #self.wall_stiffness = 9e5
+        self.wall_stiffness = 9e5
         self.material_damping_coefficient = 17.8e3 # {Pa * s}, also called B_{vis}
-        #self.fiber_pretension = 3.8e4  # {N} From Energies 2020 paper doi:10.3390/en13205499
+        self.fiber_pretension = 3.8e4  # {N} From Energies 2020 paper doi:10.3390/en13205499
         self.mooring_stiffness = 510.0e3    # Froude scaled by a factor of 10 from the original value of 510.0 N/m in
                                             # Journal of Fluids and Structures 2017 paper doi.org/10.1016/j.jfluidstructs.2017.06.003
 
@@ -108,6 +114,7 @@ class ElasticTube(object):
         #print('\nTotal wave resource seen = {:.3f}%\n'.format(100*np.sum(frequency_probabilities)))
 
     def objective_function(self):
+        from math import asin
 
         power_mean = np.sum(self.power_take_off_power_mean_power * self.frequency_probabilities)
         power_variance = np.sum(self.frequency_probabilities * (self.power_take_off_power_mean_power - power_mean) ** 2)
@@ -117,7 +124,16 @@ class ElasticTube(object):
         self.power_standard_deviation = power_standard_deviation
 
         # TODO: rename self.power_take_off_power_mean_power
-        return - 1.0 * power_mean.data
+
+        # Adjust for submerged cicumference
+        if self.submergence <= -self.static_radius:
+            circumference_ratio = 1.0
+        elif self.submergence >= self.static_radius:
+            circumference_ratio = 0.0
+        else:
+            circumference_ratio = (pi - 2*asin(self.submergence / self.static_radius)) / (2*pi)
+
+        return -circumference_ratio * power_mean.data
 
     def generate_tube(self):
         """Generates an elastic tube mesh with all attached rigid body (if relevant) and modal degrees of freedom
