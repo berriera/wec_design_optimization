@@ -29,9 +29,18 @@ class ElasticTube(object):
 
         # Unpack independent design variables
         # Variable notation: r_s, L, z_s
-        self.static_radius = tube_design_variables[0]
-        self.length = tube_design_variables[1]
-        self.submergence = tube_design_variables[2]
+        #self.static_radius = tube_design_variables[0]
+        #self.length = tube_design_variables[1]
+        #self.submergence = tube_design_variables[2]
+
+        # Unpack independent design variables for material optimization
+        self.wall_stiffness = tube_design_variables[0]
+        self.fiber_pretension = tube_design_variables[1]
+
+        # Fixed geometry for material optimization
+        self.static_radius = 0.9
+        self.length = 60.0
+        self.submergence = -1.25
 
         # Environment and incident wave constants
         self.rho = 1000
@@ -47,9 +56,9 @@ class ElasticTube(object):
         self.viscous_damping_parameter = 8 * pi * 1e-6
         self.thickness = 0.1
         self.tube_density = 532.6
-        self.wall_stiffness = 9e5
+        #self.wall_stiffness = 9e5
         self.material_damping_coefficient = 17.8e3 # {Pa * s}, also called B_{vis}
-        self.fiber_pretension = 3.8e4  # {N} From Energies 2020 paper doi:10.3390/en13205499
+        #self.fiber_pretension = 3.8e4  # {N} From Energies 2020 paper doi:10.3390/en13205499
         self.mooring_stiffness = 510.0e3    # Froude scaled by a factor of 10 from the original value of 510.0 N/m in
                                             # Journal of Fluids and Structures 2017 paper doi.org/10.1016/j.jfluidstructs.2017.06.003
 

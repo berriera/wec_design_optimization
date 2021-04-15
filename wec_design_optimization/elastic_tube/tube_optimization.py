@@ -15,16 +15,25 @@ def obj_func(x):
 #   fiber_pretension
 
 # Initialize starting location and objective function value
-current_location = np.array([0.9, 60, -1.25])
+#current_location = np.array([0.9, 60, -1.25])
+current_location = np.array([9e5, 3.8e4])
 current_objective_value = evaluate_tube_design(current_location)
 #current_objective_value = obj_func(current_location)
 
-# Set up move matrix
-variable_count = 3
+# Set up move matrix for geometry optimization
+#variable_count = 3
+#moves_list = np.eye(N=variable_count)
+#moves_list[0][0] = 0.1
+#moves_list[1][1] = 2.5
+#moves_list[2][2] = 0.25
+
+# Set up move matrix for material optimization
+# Variable notation: K_{mat}, T_s
+variable_count = 2
 moves_list = np.eye(N=variable_count)
-moves_list[0][0] = 0.1
-moves_list[1][1] = 2.5
-moves_list[2][2] = 0.25
+moves_list[0][0] = 50.0e3
+moves_list[1][1] = 2.0e3
+
 
 # Initialize history variables
 location_history = []
@@ -43,8 +52,13 @@ move_direction = 1
 move_multiplier = 16
 
 def check_bounds(potential_design):
-    upper_bounds = np.array([10.0, 200.0, -0.1])
-    lower_bounds = np.array([0.1, 20.0, -25.0])
+    # Bounds for geometry optimization
+    #upper_bounds = np.array([10.0, 200.0, -0.1])
+    #lower_bounds = np.array([0.1, 20.0, -25.0])
+
+    # Bounds for material optimization
+    upper_bounds = np.array([100.0, 3000.0])
+    lower_bounds = np.array([10.0, 200.0])
 
     return np.all(potential_design <= upper_bounds) and np.all(potential_design >= lower_bounds)
 
