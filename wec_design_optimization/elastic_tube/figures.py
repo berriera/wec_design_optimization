@@ -20,6 +20,84 @@ print('Optimal power = {:.3f}'.format(optimal_power))
 #f = evaluate_tube_design(design_variables=np.array([1.1, 60.0, -1.25]), mode_count=1)
 #print(f)
 
+def design_variable_history():
+    import pickle
+    import numpy as np
+    from math import pi
+    import matplotlib.pyplot as plt
+
+
+    parameters = {'xtick.labelsize': 14, 'ytick.labelsize': 14, 'axes.labelsize': 14, 'legend.fontsize': 14}
+    plt.rcParams.update(parameters)
+
+
+    geometry = True
+    file_location = r'C:/Users/13365/Box/flexible_tube_optimization_results/tube_history__constrained_geometry_optimization.pkl'
+    #file_location = r'C:/Users/13365/Box/flexible_tube_optimization_results/tube_history__unconstrained_material_optimization.pkl'
+    with open(file_location, 'rb') as file:
+
+        location_history = pickle.load(file)
+        function_history = pickle.load(file)
+
+        #print(location_history)
+        #print(function_history)
+
+    print('Design count = ')
+    print(len(function_history))
+    print(len(location_history))
+
+    length_history = np.zeros_like(function_history)
+    k = 0
+    for design in location_history:
+        print(design)
+        length_history[k] = design[1]
+        k += 1
+    moves = range(1, len(length_history) + 1)
+    plt.plot(length_history, moves)
+    plt.vlines(x=145.0, ymin=len(function_history), ymax=0, linestyles='dotted')
+    plt.scatter(x=[145.0], y=[len(function_history)], marker='*', s=200)
+    plt.xlim((20, 200))
+    plt.ylim((len(function_history) + 1, 0))
+    plt.xlabel('Evaluated Tube Design Length $L$')
+    plt.ylabel('Iteration Number')
+    plt.show()
+
+    opt_power = np.min(function_history)
+    opt_index = np.where(function_history == opt_power)[0][0]
+    opt_design = location_history[opt_index]
+    r_opt = opt_design[0]
+    L_opt = opt_design[1]
+    area_opt = 2 * pi * r_opt * L_opt
+    print('\nOptimal design: ')
+    print(r_opt, L_opt, area_opt)
+
+    print('')
+    print('Optimal power = {} '.format(np.min(function_history)))
+
+    print('\nOptimal design = {}'.format(opt_design))
+
+    if geometry:
+        initial_design = location_history[0]
+        initial_power = function_history[0]
+        r_o = initial_design[0]
+        L_o = initial_design[1]
+        initial_area = 2*pi*r_o*L_o
+
+        print('Initial design: ')
+        print(r_o, L_o, initial_area)
+        print(initial_area)
+
+        power_ratio = opt_power / initial_power
+        area_ratio = area_opt / initial_area
+
+        power_per_area = power_ratio / area_ratio
+
+        print('Power ratio = {}'.format(power_ratio))
+        print('\nArea ratio = {}'.format(area_ratio))
+
+        print('Power per area ratio = {}'.format(power_per_area))
+
+
 def load_data(self):
     import xarray
 
