@@ -52,7 +52,7 @@ move_multiplier = 16
 
 def check_bounds(potential_design):
     # Bounds for geometry optimization
-    upper_bounds = np.array([10.0, 200.0, 10.0])
+    upper_bounds = np.array([2.5, 200.0, 2.5])
     lower_bounds = np.array([0.1, 20.0, -25.0])
 
     # Bounds for material optimization
@@ -82,8 +82,13 @@ while not converged:
     bounds_check = check_bounds(new_location)
     #constraint_check = check_constraints(new_location)
 
+    if new_location in location_history:
+        location_index = np.where(new_location == location_history)[0][0]   # Check
+        new_objective_value = function_history[location_index]
+        
+
     # Try new move if in bounds
-    if bounds_check:
+    elif bounds_check:
         iteration_count = iteration_count + 1
 
         print('New design is in bounds. Evaluating iteration number: ', iteration_count)
