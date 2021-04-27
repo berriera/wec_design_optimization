@@ -7,18 +7,18 @@ def evaluate_tube_design(design_variables, mode_count=5):
         """Evaluates a complete tube design from start to finish
 
         """
-        elastic_tube_instance = ElasticTube(tube_design_variables=design_variables, mode_count=mode_count)
-
         # Return 0 power if the entire tube is above the free surface
         if design_variables[2] >= design_variables[0]:
             return 0.0
+
+        elastic_tube_instance = ElasticTube(tube_design_variables=design_variables, mode_count=mode_count)
 
         # Solve for motion and optimize damping for optimal power
         elastic_tube_instance.solve_tube_hydrodynamics()
         damping_value, optimal_power = elastic_tube_instance.optimize_damping()
         print('\tOptimal damping value = {:.2f}'.format(damping_value))
 
-        # TODO: update to include variance
+        # TODO: update to include variance from objective function instead of from .optimize_damping()
 
         return optimal_power
 
@@ -64,24 +64,24 @@ class ElasticTube(object):
         self.wall_stiffness = 9e5
         self.material_damping_coefficient = 17.8e3 # {Pa * s}, also called B_{vis}
         self.fiber_pretension = 3.8e4  # {N} From Energies 2020 paper doi:10.3390/en13205499
-        self.mooring_stiffness = 510.0e3    # Froude scaled by a factor of 10 from the original value of 510.0 N/m in
-                                            # Journal of Fluids and Structures 2017 paper doi.org/10.1016/j.jfluidstructs.2017.06.003
+        self.mooring_stiffness = 51.0e3  # Froude scaled by a factor of 10 from the original value of 510.0 N/m in
+                                         # Journal of Fluids and Structures 2017 paper doi.org/10.1016/j.jfluidstructs.2017.06.003
 
         # Initialize PTO damping value B_{PTO}
         self.power_take_off_damping = 0.0
 
         # Dependent geometry and inertia variables
-        # Variable notation: A, V, M
+        # Variable notation: A, V, m, M
         self.cross_sectional_area = pi * (self.static_radius ** 2)
-        self.displaced_volume = pi * (self.static_radius ** 2) * self.length
-        self.displaced_mass = self.rho * self.displaced_volume
+        self.total_volume = pi * (self.static_radius ** 2) * self.length
+        self.total_mass = self.rho * self.total_volume  # Assuming each device is neutrally buoyant
         # self.inner_radius = self.static_radius - self.thickness
         # self.tube_area = pi * (self.static_radius ** 2 - self.inner_radius ** 2)
         # self.tube_mass = (self.tube_area * self.length) * tube_density
         # self.towhead_mass = 1e4
         # self.system_mass = self.tube_mass + 2*self.towhead_mass
         # Simplified tube and towhead mass
-        self.system_mass = 0.15 * self.displaced_mass
+        self.system_mass = 0.15 * self.total_mass
 
         # Dependent miscellaneous variables
         # Variable notation: [-L/2, L/2], D, B_{mat}, eta
@@ -104,10 +104,6 @@ class ElasticTube(object):
     def objective_function(self, power_spectrum):
         from math import asin
 
-        power_mean = np.sum(power_spectrum.data * self.frequency_probability_distribution)
-        power_variance = np.sum(self.frequency_probability_distribution * (power_spectrum - power_mean) ** 2)
-        power_standard_deviation = power_variance ** (1/2)
-
         # Adjust for submerged cicumference
         if self.submergence <= -self.static_radius:
             circumference_ratio = 1.0
@@ -115,16 +111,20 @@ class ElasticTube(object):
             circumference_ratio = 0.0
         else:
             circumference_ratio = (pi - 2*asin(self.submergence / self.static_radius)) / (2*pi)
-        
-        geometry_weighted_power = circumference_ratio * power_mean
+
+        geometry_weighted_power_spectrum = circumference_ratio * power_spectrum.data
+
+        power_mean = np.sum(geometry_weighted_power_spectrum * self.frequency_probability_distribution)
+        power_variance = np.sum(self.frequency_probability_distribution * (geometry_weighted_power_spectrum - power_mean) ** 2)
+        power_standard_deviation = power_variance ** (1/2)
 
         self.power_mean = power_mean
         self.power_standard_deviation = power_standard_deviation
 
-        return -1.0 * geometry_weighted_power
+        return -1.0 * power_mean
 
     def generate_tube(self):
-        """Generates an elastic tube mesh with all attached rigid body (if relevant) and modal degrees of freedom
+        """Generates an elastic tube mesh with all attached rigid body and modal degrees of freedom
 
         Args:
             None
@@ -239,7 +239,7 @@ class ElasticTube(object):
                 total_damping_response += (modal_response_amplitudes.sel(radiating_dof=index_1) * np.conjugate(modal_response_amplitudes.sel(radiating_dof=index_2))).real \
                                             * self.wall_damping_matrix[6+k1][6+k2]
 
-        material_mean_power_dissipation = (1 / 2) * self.rho * self.cross_sectional_area * self.dissipation_coefficient * self.wave_frequencies * total_damping_response
+        material_mean_power_dissipation = (1 / 2) * self.rho * self.cross_sectional_area * self.dissipation_coefficient * (self.wave_frequencies ** 2) * total_damping_response
         power_take_off_power_spectrum = (self.power_take_off_damping / (self.power_take_off_damping + self.wall_damping)) \
                                             * material_mean_power_dissipation
         return power_take_off_power_spectrum
@@ -301,7 +301,7 @@ class ElasticTube(object):
 
         chi_dx = chi_dx / sqrt(normalization_factor)
 
-        radial_deformation = (-self.static_radius / 2) * chi_dx
+        radial_deformation = (-self.static_radius / 2) * chi_dx  # variable is delta_radius
 
         if integration_flag:
             return chi_dx
@@ -329,9 +329,9 @@ class ElasticTube(object):
         normalization_factor_matrix = np.zeros(shape=self.mode_count)
         for k in range(self.mode_count):
             modal_product_integration = quad(func=self._mode_shape_product, a=self.integration_bounds[0], b=self.integration_bounds[1], args=(k, k))[0]
-            normalization_factor_matrix[k] = (1 / self.length) * modal_product_integration + (self.system_mass / self.displaced_mass) \
-                    * self.mode_shapes(self.integration_bounds[1], k) * self.mode_shapes(self.integration_bounds[1], k)
-        
+            normalization_factor_matrix[k] = (1 / self.length) * modal_product_integration \
+                + (self.system_mass / self.total_mass) * (self.mode_shapes(self.integration_bounds[1], k) ** 2)
+        # Each factor is equal to N_i**2
         self.normalization_factor_matrix = normalization_factor_matrix
 
     def mass_matrix(self):
@@ -366,19 +366,19 @@ class ElasticTube(object):
 
         except:
             # Analytical formulas for submerged case
-            rotational_inertia_x_axis = (1 / 2) * self.displaced_mass * (self.static_radius ** 2)
-            rotational_inertia_y_axis = (1 / 12) * self.displaced_mass * (3 * (self.static_radius ** 2) + (self.length ** 2))
+            rotational_inertia_x_axis = (1 / 2) * self.total_mass * (self.static_radius ** 2)
+            rotational_inertia_y_axis = (1 / 12) * self.total_mass * (3 * (self.static_radius ** 2) + (self.length ** 2))
             rotational_inertia_z_axis = rotational_inertia_y_axis
             
-            rigid_body_mass_matrix = np.array([self.displaced_mass, self.displaced_mass, self.displaced_mass,
+            rigid_body_mass_matrix = np.array([self.total_mass, self.total_mass, self.total_mass,
                                                 rotational_inertia_x_axis,
                                                 rotational_inertia_y_axis,
                                                 rotational_inertia_z_axis
                                                 ])
-            rigid_body_mass_matrix = np.diag(rigid_body_mass_matrix)
+            rigid_body_mass_matrix = np.diag(rigid_body_mass_matrix)  # Off diagonal terms are zero for submerged case due to problem symmetry
             
         
-        modal_mass_matrix = self.displaced_mass * np.eye(N=self.mode_count)
+        modal_mass_matrix = self.total_mass * np.eye(N=self.mode_count)
 
         # Combine matrices
         mass_matrix = block_diag(rigid_body_mass_matrix, modal_mass_matrix)
@@ -445,7 +445,7 @@ class ElasticTube(object):
             rigid_body_hydrostatics_matrix = np.zeros(shape=(6,6))
 
         # Modal hydrostatic stiffness matrix
-        modal_stiffness_matrix = np.diag(self.displaced_mass * (self.mode_frequency_list ** 2))
+        modal_stiffness_matrix = np.diag(self.total_mass * (self.mode_frequency_list ** 2))
 
         # Combine matrices
         stiffness_matrix = block_diag(rigid_body_hydrostatics_matrix, modal_stiffness_matrix)
@@ -454,7 +454,7 @@ class ElasticTube(object):
 
     def mooring_matrix(self):
         mooring_matrix = np.zeros(shape=(6+self.mode_count, 6+self.mode_count))
-        mooring_matrix[1][1] = 2 * self.mooring_stiffness
+        mooring_matrix[0][0] = 2 * self.mooring_stiffness  # Mooring along the surge direction (x axis)
 
         return mooring_matrix
         
@@ -506,7 +506,7 @@ class ElasticTube(object):
 
         return
 
-    def _calculate_dispersion_roots(self, function_name, eps=1e-8, reltol=1e-3):
+    def _calculate_dispersion_roots(self, function_name, eps=1e-6, reltol=1e-3):
         """Calculates the roots of the nonlinear dispersion relationship governing the elastic tube
         
         Args:
@@ -523,7 +523,7 @@ class ElasticTube(object):
         import scipy.optimize
 
         # Calculate values of the dispersion relationship whose roots correspond to modal frequencies of the tube.
-        discretized_wave_frequencies = np.linspace(eps, 2 * pi, 1000)
+        discretized_wave_frequencies = np.linspace(eps, 10 * pi, 6300)
         dispersion_function = np.zeros_like(discretized_wave_frequencies)
         k = 0
         for frequency in discretized_wave_frequencies:
