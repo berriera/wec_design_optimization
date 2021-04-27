@@ -22,7 +22,7 @@ current_objective_value = evaluate_tube_design(current_location)
 # Set up move matrix for geometry optimization
 variable_count = 3
 moves_list = np.eye(N=variable_count)
-moves_list[0][0] = 0.1
+moves_list[0][0] = 0.05
 moves_list[1][1] = 2.5
 moves_list[2][2] = 0.25
 
@@ -53,7 +53,7 @@ move_multiplier = 16
 def check_bounds(potential_design):
     # Bounds for geometry optimization
     upper_bounds = np.array([2.5, 200.0, 2.5])
-    lower_bounds = np.array([0.1, 20.0, -25.0])
+    lower_bounds = np.array([0.05, 20.0, -25.0])
 
     # Bounds for material optimization
     #upper_bounds = np.array([100.0, 3000.0])
