@@ -8,14 +8,28 @@ import capytaine as cpt
 parameters = {'xtick.labelsize': 14, 'ytick.labelsize': 14, 'axes.labelsize': 14, 'legend.fontsize': 14}
 plt.rcParams.update(parameters)
 
-design_variables = np.array([1.0, 15.0, -1.25])
-tube = ElasticTube(design_variables, mode_count=3)
+design_variables = np.array([1.0, 20.0, -2.5])
+tube = ElasticTube(design_variables, mode_count=1)
+print('\tNumber of cells= {}'.format(tube.tube_mesh.mesh.nb_faces))
+print(tube.mode_type_1_frequency_list)
+print(tube.mode_type_2_frequency_list)
 tube.solve_tube_hydrodynamics()
 damping_value, optimal_power = tube.optimize_damping()
 print('Optimal damping = {:.3f}'.format(damping_value))
 print('\n')
 print('Optimal power = {:.3f}'.format(optimal_power))
 
+# Mesh convergence test with 3 modes, design vars = [2.5, 20.0, -2.50]
+cells = [0, 540, 720, 1440]
+power = [0, -60749.728,-61025.426, -74551.217]
+
+# Mesh convergence test with 3 modes, design vars = [1.0, 20.0, -2.50]
+cells = [0,        70,       240,       380,       520,       660,       700,       800,       900,      1260,      1600]
+power = [0, -7204.216, -4001.619, -3750.571, -3680.533, -3650.361, -3650.750, -3688.604, -3689.265, -3655.903, -3605.987]
+
+# Mode convergence test, design vars = [1.0, 20.0, -2.5]
+mode_count = [0,         1,         2,         3,          4,         5,         6,        7,        8,         9,        10,         15,       20,         25]
+power_mean = [0, -3203.403, -3212.627, -3650.750,  -3654.096, -3800.032, -3811.432,-3794.230, -3713.957, -3731.736, -3723.279, -3776.180, -3820.286, -3837.304]
 
 #f = evaluate_tube_design(design_variables=np.array([1.1, 60.0, -1.25]), mode_count=1)
 #print(f)
@@ -98,11 +112,11 @@ def design_variable_history():
         print('Power per area ratio = {}'.format(power_per_area))
 
 
-def load_data(self):
+def load_data(radius, length, submergence):
     import xarray
 
     # Load saved dataset and return the data
-    load_file_name = 'flexible_tube_results__rs_L_zs__{}_{}_{}.nc'.format(self.static_radius, self.length, self.submergence)
+    load_file_name = 'flexible_tube_results__rs_L_zs__{}_{}_{}.nc'.format(radius, length, submergence)
     results_data = cpt.io.xarray.merge_complex_values(xarray.open_dataset(load_file_name))
 
     return results_data
@@ -110,10 +124,9 @@ def load_data(self):
 def save_hydrodynamic_result_figures(tube):
         import matplotlib.pyplot as plt
 
-        tube.resorted_dofs = ['Bulge Mode 1', 'Bulge Mode 0', 'Bulge Mode 2']  # 'Bulge Mode 4', 'Bulge Mode 2'
-        tube.resorted_dofs = ['Bulge Mode 1', 'Bulge Mode 0', 'Bulge Mode 2']
-        print(tube.mode_type_1_frequency_list)
-        print(tube.mode_type_2_frequency_list)
+        tube.resorted_dofs = ['Bulge Mode 2', 'Bulge Mode 0', 'Bulge Mode 1']  # 'Bulge Mode 4', 'Bulge Mode 2'
+        tube.resorted_dofs = tube.tube_mesh.dofs
+        
         plt.figure()
         k=0
         for dof in tube.resorted_dofs:
@@ -172,7 +185,7 @@ def save_hydrodynamic_result_figures(tube):
         plt.show()
         #plt.savefig('response_amplitude_operator.png', bbox_inches='tight')
 
-#save_hydrodynamic_result_figures(tube)
+save_hydrodynamic_result_figures(tube)
 
 def plot_mode_shapes(tube):
         import matplotlib.pyplot as plt
@@ -233,7 +246,7 @@ def plot_dissipated_power_statistics(tube):
 
         plt.show()
 
-plot_dissipated_power_statistics(tube)
+#plot_dissipated_power_statistics(tube)
 
 def plot_tube_design():
         tube = ElasticTube(np.array([2.5, 145, -2.75]))
