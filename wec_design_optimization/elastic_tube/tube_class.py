@@ -136,7 +136,7 @@ class ElasticTube(object):
         print('\tGenerating tube.')
         tube = cpt.HorizontalCylinder(
             radius=self.static_radius, length=self.length, center=(0, 0, self.submergence),
-            nx=int(self.length), ntheta=20, nr=int(self.static_radius / 0.3), clever=False)
+            nx=int(1.25*self.length), ntheta=20, nr=int(5*self.static_radius), clever=False)
         tube.keep_immersed_part()
         tube.add_all_rigid_body_dofs()
 
@@ -169,7 +169,7 @@ class ElasticTube(object):
         
         if self.save_results:
             from capytaine.io.xarray import separate_complex_values
-            save_file_name = 'flexible_tube_results__rs_le_zs__{}_{}_{}.nc'.format(self.static_radius, self.length, self.submergence)
+            save_file_name = 'flexible_tube_results__rs_le_zs__{}_{}_{}__with_{}_cells.nc'.format(self.static_radius, self.length, self.submergence, self.tube_mesh.mesh.nb_faces)
             separate_complex_values(result_data).to_netcdf(save_file_name,
                                     encoding={'radiating_dof': {'dtype': 'U'},
                                     'influenced_dof': {'dtype': 'U'}}
