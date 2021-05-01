@@ -20,12 +20,45 @@ cells = [0,        70,       240,       380,       520,       660,       700,   
 power = [0, -7204.216, -4001.619, -3750.571, -3680.533, -3650.361, -3650.750, -3688.604, -3689.265, -3655.903, -3605.987]
 
 
-def run_tube():
+def tube_descriptors():
     design_variables = np.array([1.0, 20.0, -2.5])
     tube = ElasticTube(design_variables, mode_count=1)
     print('\tNumber of cells= {}'.format(tube.tube.mesh.nb_faces))
     print(tube.mode_type_1_frequency_list)
     print(tube.mode_type_2_frequency_list)
+    return
+
+def intrinsic_impedance():
+    
+    tube = ElasticTube(tube_design_variables=np.array([2.5, 117.5, -2.75]), mode_count=5)
+    resorted_dofs = ['Bulge Mode 2', 'Bulge Mode 0', 'Bulge Mode 3']
+    dataset = load_data(2.5, 117.5, -2.75, 3400)
+
+    tube.result_data = dataset
+    tube.optimize_damping()
+    dissipation = tube.dissipation
+
+
+    omega = dataset.coords['omega']
+    A = (-omega**2*(dataset['mass'] + dataset['added_mass'])
+            + 1j*omega*dataset['radiation_damping']
+            + dataset['hydrostatic_stiffness'])
+    A = A + 1j*omega*dissipation
+
+    intrinsic_impedance = xr.DataArray(A, coords=[omega, dataset.coords['radiating_dof'], dataset.coords['influenced_dof']], dims=['omega', 'radiating_dof', 'influenced_dof'])
+
+    plt.figure()
+    k=0
+    for dof in resorted_dofs:
+        plt.plot(omega,
+                np.abs(intrinsic_impedance.sel(radiating_dof=dof, influenced_dof=dof)),
+                label='Bulge Mode ' + str(k)
+                )
+        k += 1
+    plt.xlabel('$\omega$ (rad/s)')
+    plt.ylabel('Radiation damping')
+    plt.legend()
+    plt.show()
     return
 
 
@@ -67,7 +100,7 @@ def load_data(radius, length, submergence, cell_count):
 
     return results_data
 
-def save_hydrodynamic_result_figures(tube, result_data, sorted_dof_integers):
+def hydrodynamic_results(tube, result_data, sorted_dof_integers):
 
     sorted_dof_names = []
     for dof in sorted_dof_integers:
