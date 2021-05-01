@@ -15,12 +15,12 @@ def evaluate_tube_design(design_variables, mode_count=5):
 
         # Solve for motion and optimize damping for optimal power
         elastic_tube_instance.solve_tube_hydrodynamics()
-        damping_value, optimal_power = elastic_tube_instance.optimize_damping()
+        damping_value, optimal_objective_function = elastic_tube_instance.optimize_damping()
         print('\tOptimal damping value = {:.2f}'.format(damping_value))
 
         # TODO: update to include variance from objective function instead of from .optimize_damping()
 
-        return optimal_power
+        return optimal_objective_function
 
 
 class ElasticTube(object):
@@ -138,21 +138,53 @@ class ElasticTube(object):
             radius=self.static_radius, length=self.length, center=(0, 0, self.submergence),
             nx=int(1.25*self.length), ntheta=20, nr=int(5*self.static_radius), clever=False)
         tube.keep_immersed_part()
-        tube.add_all_rigid_body_dofs()
 
         # Add all elastic mode DOFs
         for k in range(self.mode_count):
             key_name = 'Bulge Mode ' + str(k)
             tube.dofs[key_name] = np.array([self.mode_shape_derivatives(x, y, z, mode_number=k) for x, y, z in tube.mesh.faces_centers])    
 
-        self.tube_mesh = tube
-        tube.mass = tube.add_dofs_labels_to_matrix(self.mass_matrix())
-        tube.hydrostatic_stiffness = tube.add_dofs_labels_to_matrix(self.stiffness_matrix())
+        modal_mass_matrix = self.total_mass * np.eye(N=self.mode_count)
+        modal_stiffness_matrix = np.diag(self.total_mass * (self.mode_frequency_list ** 2))
+
+        tube.mass = tube.add_dofs_labels_to_matrix(modal_mass_matrix)
+        tube.hydrostatic_stiffness = tube.add_dofs_labels_to_matrix(modal_stiffness_matrix)
 
         self.tube = tube
 
         self.dissipation = tube.add_dofs_labels_to_matrix(self.damping_matrix())
-        self.mooring = tube.add_dofs_labels_to_matrix(self.mooring_matrix())
+
+    def damping_matrix(self):
+        """Defines an n x n damping matrix for the tube's modal degrees of freedom
+
+        Args:
+            None
+        
+        Returns:
+            damping matrix (2d np array)
+
+        """
+        from scipy.integrate import quad
+
+        wall_damping_matrix = np.zeros(shape=(self.mode_count, self.mode_count))
+        inner_flow_damping_matrix = np.zeros(shape=(self.mode_count, self.mode_count))
+
+        for k1 in range(self.mode_count):
+            for k2 in range(self.mode_count):
+                wall_damping_matrix[k1][k2] = quad(func=self._mode_shape_derivative_product, a=self.integration_bounds[0], b=self.integration_bounds[1], args=(k1, k2))[0]
+
+        for k1 in range(self.mode_count):
+            for k2 in range(self.mode_count):
+                inner_flow_damping_matrix[k1][k2] = quad(func=self._mode_shape_product, a=self.integration_bounds[0], b=self.integration_bounds[1], args=(k1, k2))[0]
+
+        damping_matrix = self.rho * self.cross_sectional_area * self.dissipation_coefficient * wall_damping_matrix \
+            + self.rho * self.viscous_damping_parameter * inner_flow_damping_matrix
+
+        self.total_damping_matrix = damping_matrix
+        self.wall_damping_matrix = wall_damping_matrix
+        self.inner_flow_damping_matrix = inner_flow_damping_matrix
+
+        return damping_matrix
 
 
     def solve_tube_hydrodynamics(self):
@@ -169,7 +201,7 @@ class ElasticTube(object):
         
         if self.save_results:
             from capytaine.io.xarray import separate_complex_values
-            save_file_name = 'flexible_tube_results__rs_le_zs__{}_{}_{}__with_{}_cells.nc'.format(self.static_radius, self.length, self.submergence, self.tube_mesh.mesh.nb_faces)
+            save_file_name = 'flexible_tube_results__rs_le_zs__{}_{}_{}__with_{}_cells.nc'.format(self.static_radius, self.length, self.submergence, self.tube.mesh.nb_faces)
             separate_complex_values(result_data).to_netcdf(save_file_name,
                                     encoding={'radiating_dof': {'dtype': 'U'},
                                     'influenced_dof': {'dtype': 'U'}}
@@ -203,9 +235,9 @@ class ElasticTube(object):
         self.dissipation.data = damping_matrix
 
         # Update modal RAOs
-        modal_response_amplitude_data = cpt.post_pro.rao(self.result_data, wave_direction=self.wave_direction, 
-                                                            dissipation=self.dissipation,
-                                                            stiffness=self.mooring)
+        modal_response_amplitude_data = cpt.post_pro.rao(self.result_data,
+                                                            wave_direction=self.wave_direction, 
+                                                            dissipation=self.dissipation)
 
         # Calculate power spectrum
         dissipated_power_spectrum = self.evaluate_dissipated_power(modal_response_amplitude_data)
@@ -237,7 +269,7 @@ class ElasticTube(object):
                 index_1 = 'Bulge Mode ' + str(k1)
                 index_2 = 'Bulge Mode ' + str(k2)
                 total_damping_response += (modal_response_amplitudes.sel(radiating_dof=index_1) * np.conjugate(modal_response_amplitudes.sel(radiating_dof=index_2))).real \
-                                            * self.wall_damping_matrix[6+k1][6+k2]
+                                            * self.wall_damping_matrix[k1][k2]
 
         material_mean_power_dissipation = (1 / 2) * self.rho * self.cross_sectional_area * self.dissipation_coefficient * (self.wave_frequencies ** 2) * total_damping_response
         power_take_off_power_spectrum = (self.power_take_off_damping / (self.power_take_off_damping + self.wall_damping)) \
@@ -333,130 +365,6 @@ class ElasticTube(object):
                 + (self.system_mass / self.total_mass) * (self.mode_shapes(self.integration_bounds[1], k) ** 2)
         # Each factor is equal to N_i**2
         self.normalization_factor_matrix = normalization_factor_matrix
-
-    def mass_matrix(self):
-        """Defines an (6+n) x (6+n) mass matrix for the tube, where n is the modal degrees of freedom
-
-        Args:
-            None
-
-        Returns:
-            mass_matrix (2d np array)
-
-        """
-        import meshmagick
-        from scipy.linalg import block_diag
-        
-        try:
-            # Floating case
-            temporary_mesh = meshmagick.mesh.Mesh(self.tube_mesh.mesh.vertices, self.tube_mesh.mesh.faces)
-            temporary_mesh_hydrostatics = meshmagick.hydrostatics.Hydrostatics(working_mesh=temporary_mesh, 
-                                                                                cog=[0.0, 0.0, self.submergence],
-                                                                                rho_water=self.rho)
-            hydrostatics_data = temporary_mesh_hydrostatics.hs_data
-            
-            # Abbreviate variable for easier readiability
-            hsd = hydrostatics_data
-            submerged_mass = hsd['disp_mass']
-
-            rotational_inertia_matrix = np.array([[   hsd['Ixx'], -1*hsd['Ixy'], -1*hsd['Ixz']],
-                                                  [-1*hsd['Ixy'],    hsd['Iyy'], -1*hsd['Iyz']],
-                                                  [-1*hsd['Ixz'], -1*hsd['Iyz'],    hsd['Izz']]])
-            rigid_body_mass_matrix = block_diag(submerged_mass, submerged_mass, submerged_mass, rotational_inertia_matrix)
-
-        except:
-            # Analytical formulas for submerged case
-            rotational_inertia_x_axis = (1 / 2) * self.total_mass * (self.static_radius ** 2)
-            rotational_inertia_y_axis = (1 / 12) * self.total_mass * (3 * (self.static_radius ** 2) + (self.length ** 2))
-            rotational_inertia_z_axis = rotational_inertia_y_axis
-            
-            rigid_body_mass_matrix = np.array([self.total_mass, self.total_mass, self.total_mass,
-                                                rotational_inertia_x_axis,
-                                                rotational_inertia_y_axis,
-                                                rotational_inertia_z_axis
-                                                ])
-            rigid_body_mass_matrix = np.diag(rigid_body_mass_matrix)  # Off diagonal terms are zero for submerged case due to problem symmetry
-            
-        
-        modal_mass_matrix = self.total_mass * np.eye(N=self.mode_count)
-
-        # Combine matrices
-        mass_matrix = block_diag(rigid_body_mass_matrix, modal_mass_matrix)
-
-        return mass_matrix
-
-    def damping_matrix(self):
-        """Defines an (6+n) x (6+n) damping matrix for the tube's modal degrees of freedom
-
-        Args:
-            None
-        
-        Returns:
-            damping matrix (2d np array)
-
-        """
-        from scipy.integrate import quad
-
-        wall_damping_matrix = np.zeros(shape=(6 + self.mode_count, 6 + self.mode_count))
-        inner_flow_damping_matrix = np.zeros(shape=(6 + self.mode_count, 6 + self.mode_count))
-
-        for k1 in range(self.mode_count):
-            for k2 in range(self.mode_count):
-                wall_damping_matrix[6+k1][6+k2] = quad(func=self._mode_shape_derivative_product, a=self.integration_bounds[0], b=self.integration_bounds[1], args=(k1, k2))[0]
-
-        for k1 in range(self.mode_count):
-            for k2 in range(self.mode_count):
-                inner_flow_damping_matrix[6+k1][6+k2] = quad(func=self._mode_shape_product, a=self.integration_bounds[0], b=self.integration_bounds[1], args=(k1, k2))[0]
-
-        damping_matrix = self.rho * self.cross_sectional_area * self.dissipation_coefficient * wall_damping_matrix \
-            + self.rho * self.viscous_damping_parameter * inner_flow_damping_matrix
-
-        self.total_damping_matrix = damping_matrix
-        self.wall_damping_matrix = wall_damping_matrix
-        self.inner_flow_damping_matrix = inner_flow_damping_matrix
-
-        return damping_matrix
-
-    def stiffness_matrix(self):
-        """Defines an (6+n) x (6+n) stiffness matrix for the tube's modal degrees of freedom
-
-        Args:
-            None
-        
-        Returns:
-            stiffness matrix (2d np array)
-
-        """
-        import meshmagick
-        from scipy.linalg import block_diag
-
-        # Rigid body hydrostatic stiffness matrix
-        try:
-            # Floating case
-            temporary_mesh = meshmagick.mesh.Mesh(self.tube_mesh.mesh.vertices, self.tube_mesh.mesh.faces)
-            temporary_mesh_hydrostatics = meshmagick.hydrostatics.Hydrostatics(working_mesh=temporary_mesh, 
-                                                                                cog=[0.0, 0.0, self.submergence],
-                                                                                rho_water=self.rho)
-            hydrostatics_data = temporary_mesh_hydrostatics.hs_data
-            rigid_body_hydrostatics_matrix = block_diag(0,0,hydrostatics_data['stiffness_matrix'],0)
-        except:
-            # Submerged case that typically causes a meshmagick failure
-            # Thanks to Adam Keeste from https://github.com/LHEEA/meshmagick/issues/19#issuecomment-792972698 for this
-            rigid_body_hydrostatics_matrix = np.zeros(shape=(6,6))
-
-        # Modal hydrostatic stiffness matrix
-        modal_stiffness_matrix = np.diag(self.total_mass * (self.mode_frequency_list ** 2))
-
-        # Combine matrices
-        stiffness_matrix = block_diag(rigid_body_hydrostatics_matrix, modal_stiffness_matrix)
-
-        return stiffness_matrix
-
-    def mooring_matrix(self):
-        mooring_matrix = np.zeros(shape=(6+self.mode_count, 6+self.mode_count))
-        mooring_matrix[0][0] = 2 * self.mooring_stiffness  # Mooring along the surge direction (x axis)
-
-        return mooring_matrix
         
 
     def evaluate_modal_frequency_information(self):
