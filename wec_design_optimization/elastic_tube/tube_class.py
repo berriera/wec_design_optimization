@@ -59,7 +59,7 @@ class ElasticTube(object):
 
         # Tube material constants
         self.viscous_damping_parameter = 8 * pi * 1e-6
-        self.thickness = 0.1
+        self.thickness = 0.05 * self.static_radius
         tube_density = 532.6
         self.wall_stiffness = 9e5
         self.material_damping_coefficient = 17.8e3 # {Pa * s}, also called B_{vis}
@@ -86,7 +86,7 @@ class ElasticTube(object):
         # Dependent miscellaneous variables
         # Variable notation: [-L/2, L/2], D, B_{mat}, eta
         self.integration_bounds = [-self.length / 2, self.length / 2]
-        self.distensibility = (self.static_radius) * (self.thickness * self.cross_sectional_area * self.wall_stiffness)
+        self.distensibility = 1 / (pi * self.static_radius * self.thickness * self.wall_stiffness)
         self.wall_damping = (1 / (2 * self.cross_sectional_area)) * self.material_damping_coefficient
         self.dissipation_coefficient = ((self.thickness * self.cross_sectional_area) / (self.rho * self.static_radius)) \
             * (self.power_take_off_damping + self.wall_damping)
@@ -281,7 +281,7 @@ class ElasticTube(object):
         # Define chi(x)
         # k1 is lowercase k in A Barbarit et al.
         # k2 is uppercase K in A Barbarit et al.
-        from math import sin, cos, tan, sinh, cosh, tanh, sqrt
+        from math import sin, cos, tan, sinh, cosh, tanh, sqrt, exp
 
         # Find, modal frequency and modal wavenumbers
         modal_frequency = self.mode_frequency_list[mode_number]
@@ -294,14 +294,30 @@ class ElasticTube(object):
         
         # Mode type 1 as a function of x
         if modal_frequency in self.mode_type_1_frequency_list:
-            c1 = tanh(k2 * self.length / 2) / cos(k1 * self.length / 2)
-            c2 = tan(k1 * self.length / 2) / cosh(k2 * self.length / 2)
-            chi = c1 * sin(k1 * x) - c2 * sinh(k2 * x)
+            try:
+                c1 = tanh(k2 * self.length / 2) / cos(k1 * self.length / 2)
+                c2 = tan(k1 * self.length / 2) / cosh(k2 * self.length / 2)
+                chi = c1 * sin(k1 * x) - c2 * sinh(k2 * x)
+            except OverflowError:
+                c1 = tanh(k2 * self.length / 2) / cos(k1 * self.length / 2)
+                c2 = tan(k1 * self.length / 2)
+                if x >= 0:
+                    chi = c1 * sin(k1 * x) - c2 * exp(k2 * (x - self.length / 2))
+                else:
+                    chi = c1 * sin(k1 * x) - c2 * -exp(k2 * (-x - self.length / 2))
         # Mode type 2 as a function of x
         elif modal_frequency in self.mode_type_2_frequency_list:
-            c3 = k2 * tanh(k2 * self.length / 2) / cos(k1 * self.length / 2)
-            c4 = k1 * tan(k1 * self.length / 2) / cosh(k2 * self.length / 2)
-            chi = c3 * cos(k1 * x) + c4 * cosh(k2 * x)
+            try:
+                c3 = k2 * tanh(k2 * self.length / 2) / cos(k1 * self.length / 2)
+                c4 = k1 * tan(k1 * self.length / 2) / cosh(k2 * self.length / 2)
+                chi = c3 * cos(k1 * x) + c4 * cosh(k2 * x)
+            except OverflowError:
+                c3 = k2 * tanh(k2 * self.length / 2) / cos(k1 * self.length / 2)
+                c4 = k1 * tan(k1 * self.length / 2)
+                if x >= 0:
+                    chi = c3 * cos(k1 * x) + c4 * exp(k2 * (x - self.length / 2))
+                else:
+                    chi = c3 * cos(k1 * x) + c4 * exp(k2 * (-x - self.length / 2))
         chi = chi / sqrt(normalization_factor)
 
         return chi
@@ -310,7 +326,7 @@ class ElasticTube(object):
         # Defines del{chi}/del{x}(x)
         # k1 is lowercase k in A Barbarit et al.
         # k2 is uppercase K in A Barbarit et al.
-        from math import sin, cos, tan, sinh, cosh, tanh, sqrt
+        from math import sin, cos, tan, sinh, cosh, tanh, sqrt, exp
 
         modal_frequency = self.mode_frequency_list[mode_number]
         k1 = self.mode_lower_wavenumber_list[mode_number]
@@ -322,14 +338,30 @@ class ElasticTube(object):
         
         # Mode type 1 as a function of x
         if modal_frequency in self.mode_type_1_frequency_list:
-            c1 = k1 * tanh(k2 * self.length / 2) / cos(k1 * self.length / 2)
-            c2 = k2 * tan(k1 * self.length / 2) / cosh(k2 * self.length / 2)
-            chi_dx = c1 * cos(k1 * x) - c2 * cosh(k2 * x)
+            try:
+                c1 = k1 * tanh(k2 * self.length / 2) / cos(k1 * self.length / 2)
+                c2 = k2 * tan(k1 * self.length / 2) / cosh(k2 * self.length / 2)
+                chi_dx = c1 * cos(k1 * x) - c2 * cosh(k2 * x)
+            except OverflowError:
+                c1 = k1 * tanh(k2 * self.length / 2) / cos(k1 * self.length / 2)
+                c2 = k2 * tan(k1 * self.length / 2)
+                if x >= 0:
+                    chi_dx = c1 * cos(k1 * x) - c2 * exp(k2 * (x - self.length / 2))
+                else:
+                    chi_dx = c1 * cos(k1 * x) - c2 * exp(k2 * (-x - self.length / 2))
         # Mode type 2 as a function of x
         elif modal_frequency in self.mode_type_2_frequency_list:
-            c3 = k1 * k2 * tanh(k2 * self.length / 2) / cos(k1 * self.length / 2)
-            c4 = k1 * k2 * tan(k1 * self.length / 2) / cosh(k2 * self.length / 2)
-            chi_dx = -c3 * sin(k1 * x) + c4 * sinh(k2 * x)
+            try:
+                c3 = k1 * k2 * tanh(k2 * self.length / 2) / cos(k1 * self.length / 2)
+                c4 = k1 * k2 * tan(k1 * self.length / 2) / cosh(k2 * self.length / 2)
+                chi_dx = -c3 * sin(k1 * x) + c4 * sinh(k2 * x)
+            except OverflowError:
+                c3 = k1 * k2 * tanh(k2 * self.length / 2) / cos(k1 * self.length / 2)
+                c4 = k1 * k2 * tan(k1 * self.length / 2)
+                if x >= 0:
+                    chi_dx = -c3 * sin(k1 * x) + c4 * exp(k2 * (x - self.length / 2))
+                else:
+                    chi_dx = -c3 * sin(k1 * x) + c4 * -exp(k2 * (-x - self.length / 2))
 
         chi_dx = chi_dx / sqrt(normalization_factor)
 
@@ -414,7 +446,7 @@ class ElasticTube(object):
 
         return
 
-    def _calculate_dispersion_roots(self, function_name, eps=1e-6, reltol=1e-3):
+    def _calculate_dispersion_roots(self, function_name, eps=1e-4, reltol=1e-3):
         """Calculates the roots of the nonlinear dispersion relationship governing the elastic tube
         
         Args:
@@ -431,7 +463,7 @@ class ElasticTube(object):
         import scipy.optimize
 
         # Calculate values of the dispersion relationship whose roots correspond to modal frequencies of the tube.
-        discretized_wave_frequencies = np.linspace(eps, 10 * pi, 6300)
+        discretized_wave_frequencies = np.linspace(eps, 10 * pi, 63000)
         dispersion_function = np.zeros_like(discretized_wave_frequencies)
         k = 0
         for frequency in discretized_wave_frequencies:
