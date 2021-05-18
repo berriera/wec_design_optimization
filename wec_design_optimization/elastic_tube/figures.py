@@ -12,12 +12,12 @@ parameters = {'xtick.labelsize': 14, 'ytick.labelsize': 14, 'axes.labelsize': 14
 plt.rcParams.update(parameters)
 
 # Mesh convergence test with 3 modes, design vars = [2.5, 20.0, -2.50]
-cells = [0, 540, 720, 1440]
-power = [0, -60749.728,-61025.426, -74551.217]
+#cells = [0, 540, 720, 1440]
+#power = [0, -60749.728,-61025.426, -74551.217]
 
 # Mesh convergence test with 3 modes, design vars = [1.0, 20.0, -2.50]
-cells = [0,        70,       240,       380,       520,       660,       700,       800,       900,      1260,      1600]
-power = [0, -7204.216, -4001.619, -3750.571, -3680.533, -3650.361, -3650.750, -3688.604, -3689.265, -3655.903, -3605.987]
+#cells = [0,        70,       240,       380,       520,       660,       700,       800,       900,      1260,      1600]
+#power = [0, -7204.216, -4001.619, -3750.571, -3680.533, -3650.361, -3650.750, -3688.604, -3689.265, -3655.903, -3605.987]
 
 
 def tube_descriptors():
@@ -317,13 +317,25 @@ def plot_wave_probability_distribution():
     return
 
 #tube = ElasticTube(tube_design_variables=np.array([2.5, 200.0, -3.0]), mode_count=5)
-
-for k in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 15, 20, 25]:
-    f = -1 * evaluate_tube_design(design_variables=np.array([0.650, 90.0, -11.25]), mode_count=k)
+for k in [1, 2, 3, 4, 5]:
+    f = -1 * evaluate_tube_design(design_variables=np.array([2.75, 22.0, -1.50]), mode_count=k)
     print('Objective function for {} modes is {:.2f} W'.format(k, f))
 
-modes = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 15, 20, 25]
-power = [7666.73, ]
+# [0.650, 90.0, -11.25]
+modes =   [1, 2, 3, 4, 5]
+power =   [7666.73, 13731.63, 13823.66, 13841.86, 13843.08]
+damping = [5484016.73, 104617.46, 104409.37, 105389.42, 105456.17]
+
+
+# [1.10, 192.0, -4.00]
+modes = [1, 2, 3, 4, 5]
+power = [14822.17, 166569.90, 281448.16, 283388.01, 279700.78]
+damping = [13962611.31, 445590.67, 327046.14, 326392.08, 320709.79]
+
+# [2.75, 22.0, -1.50]
+modes = [1, 2, 3, 4, 5]
+power = [22.29, 46.84, 208.32, 208.46, 236.87]
+damping = [847376.38, 7001507.75, 1592576.91, 1592392.21, 1582473.59]
 
 #print(tube.mode_type_1_frequency_list)
 #print(tube.mode_type_2_frequency_list)
