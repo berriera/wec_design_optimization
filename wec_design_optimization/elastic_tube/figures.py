@@ -21,12 +21,18 @@ power = [0, -7204.216, -4001.619, -3750.571, -3680.533, -3650.361, -3650.750, -3
 
 
 def tube_descriptors():
-    design_variables = np.array([1.0, 20.0, -2.5])
-    tube = ElasticTube(design_variables, mode_count=1)
-    print('\tNumber of cells= {}'.format(tube.tube.mesh.nb_faces))
-    print(tube.mode_type_1_frequency_list)
-    print(tube.mode_type_2_frequency_list)
+    design_variables = np.array([2.5, 90.0, -3.0])
+    #tube = ElasticTube(design_variables, mode_count=5)
+    f = evaluate_tube_design(design_variables)
+    print(f)
+    #obj = evaluate_tube_design(design_variables, mode_count=10)
+    #print('\tNumber of cells= {}'.format(tube.tube.mesh.nb_faces))
+    #print(tube.mode_type_1_frequency_list)
+    #print(tube.mode_type_2_frequency_list)
+    #print(obj)
     return
+
+#tube_descriptors()
 
 def intrinsic_impedance():
     
@@ -95,7 +101,7 @@ def design_variable_history():
 def load_data(radius, length, submergence, cell_count):
 
     # Load saved dataset and return the data
-    load_file_name = 'flexible_tube_results__rs_L_zs__{}_{}_{}__with_{}_cells.nc'.format(radius, length, submergence, cell_count)
+    load_file_name = 'flexible_tube_results__rs_le_zs__{}_{}_{}__with_{}_cells.nc'.format(radius, length, submergence, cell_count)
     results_data = cpt.io.xarray.merge_complex_values(xr.open_dataset(load_file_name))
 
     return results_data
@@ -104,7 +110,7 @@ def hydrodynamic_results(tube, result_data, sorted_dof_integers):
 
     sorted_dof_names = []
     for dof in sorted_dof_integers:
-        sorted_dof_names.append('Bulge Mode' + str(dof))
+        sorted_dof_names.append('Bulge Mode ' + str(dof))
 
     plt.figure()
     k=0
@@ -150,7 +156,7 @@ def hydrodynamic_results(tube, result_data, sorted_dof_integers):
             np.abs(tube.modal_response_amplitude_data.sel(radiating_dof=dof)).data,
             label='Bulge Mode ' + str(k)
         )
-    k += 1
+        k += 1
     plt.xlabel('Wave Period $T$ (s)')
     plt.ylabel('Response Amplitude Operator $|\hat{a}|$')
     plt.legend()
@@ -162,7 +168,7 @@ def plot_mode_shapes(tube, sorted_dof_integers):
         plt.figure()
         j = 0
         for mode_number in sorted_dof_integers:
-            tube_x = np.linspace(tube.integration_bounds[0], tube.integration_bounds[1], 250)
+            tube_x = np.linspace(tube.integration_bounds[0], tube.integration_bounds[1], 20000)
             tube_radial_deformation = np.zeros_like(tube_x)
 
             k = 0
@@ -204,16 +210,18 @@ def plot_dissipated_power_statistics(tube):
         plt.xlabel('Power Take Off Damping Value (kPa $ \cdot $ s /m$^2$)', fontsize=14)
         plt.ylabel('Dissipated PTO Power (kW)', fontsize=14)
 
-        tube._pto_damping_dissipated_power(optim)
-        plt.vlines(x=1e-3 * damping_value, ymin=0, ymax=0.001 * tube.power_mean, linestyles='dashed')
-        plt.scatter([1e-3*damping_value], [0.001*tube.power_mean], marker='*', s=150)
+        tube._pto_damping_dissipated_power(tube.optimal_damping_value)
+        plt.vlines(x=1e-3 * tube.optimal_damping_value, ymin=0, ymax=0.001 * tube.power_mean, linestyles='dashed')
+        plt.scatter([1e-3*tube.optimal_damping_value], [0.001*tube.power_mean], marker='*', s=150)
 
         plt.show()
 
 
 def plot_dispersion_formula():
-    wave_frequencies = np.linspace(0.1, 70.0, 100000)
-    tube = ElasticTube(np.array([0.9, 60, -1.35, 120e3]))
+    wave_frequencies = np.linspace(1e-4, 10*pi, 63000)
+    tube = ElasticTube(np.array([0.9, 60, -1.35]), mode_count=5)
+    animation = tube.tube.animate(motion={'Bulge Mode 0': 0.18}, loop_duration=6.0)
+    animation.run()
     boundary1 = np.zeros_like(wave_frequencies)
     boundary2 = np.zeros_like(wave_frequencies)
     k = 0
@@ -225,9 +233,12 @@ def plot_dispersion_formula():
     plt.plot(wave_frequencies, boundary2)
     plt.xlabel('$\omega$')
     plt.hlines(y=0, xmin=wave_frequencies[0], xmax=wave_frequencies[-1])
+    plt.xlim(xmin=0, xmax=10)
+    plt.ylim(ymin=-2, ymax=2)
+    print(tube.mode_type_1_frequency_list)
+    print(tube.mode_type_2_frequency_list)
     plt.show()
     return
-
 
 def damping_figure(tube):
     damping_values = np.linspace(0, 2e7, 100)
@@ -304,3 +315,25 @@ def plot_wave_probability_distribution():
     plt.ylim((0, 0.05))
     plt.show()
     return
+
+#tube = ElasticTube(tube_design_variables=np.array([2.5, 200.0, -3.0]), mode_count=5)
+
+for k in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 15, 20, 25]:
+    f = -1 * evaluate_tube_design(design_variables=np.array([0.650, 90.0, -11.25]), mode_count=k)
+    print('Objective function for {} modes is {:.2f} W'.format(k, f))
+
+modes = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 15, 20, 25]
+power = [7666.73, ]
+
+#print(tube.mode_type_1_frequency_list)
+#print(tube.mode_type_2_frequency_list)
+
+#plot_mode_shapes(tube, [1, 2, 3, 0, 4])
+#dataset = load_data(2.5, 50.0, -3.0, 1720)
+#tube.result_data = dataset
+#tube.optimize_damping()
+#dissipation = tube.dissipation
+
+#hydrodynamic_results(tube, dataset, [1, 2, 0])
+#plot_dissipated_power_statistics(tube)
+
