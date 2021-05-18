@@ -50,7 +50,7 @@ class ElasticTube(object):
 
         # Environment and incident wave constants
         self.rho = 1025
-        self.water_depth = -inf
+        self.water_depth = -45
         self.wave_direction = 0.0
         self.mode_count = mode_count
         self.wave_periods = np.linspace(3.2409, 17.8155, 82)
@@ -59,7 +59,7 @@ class ElasticTube(object):
 
         # Tube material constants
         self.viscous_damping_parameter = 8 * pi * 1e-6
-        self.thickness = 0.05 * self.static_radius
+        self.thickness = 0.04 * self.static_radius
         tube_density = 532.6
         self.wall_stiffness = 9e5
         self.material_damping_coefficient = 17.8e3 # {Pa * s}, also called B_{vis}
@@ -194,8 +194,18 @@ class ElasticTube(object):
         print('\tSolving tube hydrodynamics.')
 
         solver = cpt.BEMSolver()
-        problems = [cpt.RadiationProblem(omega=omega, body=self.tube, radiating_dof=dof, rho=self.rho) for dof in self.tube.dofs for omega in self.wave_frequencies]
-        problems += [cpt.DiffractionProblem(omega=omega, body=self.tube, wave_direction=self.wave_direction, rho=self.rho) for omega in self.wave_frequencies]
+        problems = [cpt.RadiationProblem(omega=omega, 
+                        body=self.tube, 
+                        radiating_dof=dof, 
+                        rho=self.rho, 
+                        sea_bottom=self.water_depth)
+                        for dof in self.tube.dofs for omega in self.wave_frequencies]
+        problems += [cpt.DiffractionProblem(omega=omega, 
+                        body=self.tube, 
+                        wave_direction=self.wave_direction, 
+                        rho=self.rho, 
+                        sea_bottom=self.water_depth) 
+                        for omega in self.wave_frequencies]
         results = solver.solve_all(problems, keep_details=False)
         result_data = cpt.assemble_dataset(results)
         
