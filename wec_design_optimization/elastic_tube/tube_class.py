@@ -29,6 +29,7 @@ class ElasticTube(object):
     def __init__(self, tube_design_variables, mode_count):
         from math import inf, pi
         import scipy.io
+        from scipy.interpolate import interp1d
 
         #logging.basicConfig(level=logging.INFO, format="%(levelname)s:\t%(message)s")
         self.save_results = True
@@ -53,8 +54,9 @@ class ElasticTube(object):
         self.water_depth = -45
         self.wave_direction = 0.0
         self.mode_count = mode_count
-        self.wave_periods = np.linspace(3.2409, 17.8155, 82)
-        self.wave_frequencies = (2 * pi) / self.wave_periods
+        frequency_count = 80
+        #self.wave_frequencies = np.linspace(2 * pi / 17.8155, 2 * pi / 3.2409, frequency_count)
+        self.wave_frequencies = np.linspace(0.3, 2.0, frequency_count)
         self.wave_height = 1.0
 
         # Tube material constants
@@ -75,12 +77,15 @@ class ElasticTube(object):
         self.cross_sectional_area = pi * (self.static_radius ** 2)
         self.total_volume = pi * (self.static_radius ** 2) * self.length
         self.total_mass = self.rho * self.total_volume  # Assuming each device is neutrally buoyant
+
+        # Full system mass calculation for M with tube and towhead mass
         # self.inner_radius = self.static_radius - self.thickness
         # self.tube_area = pi * (self.static_radius ** 2 - self.inner_radius ** 2)
         # self.tube_mass = (self.tube_area * self.length) * tube_density
         # self.towhead_mass = 1e4
         # self.system_mass = self.tube_mass + 2*self.towhead_mass
-        # Simplified tube and towhead mass
+        
+        # Simplified system mass
         self.system_mass = 0.15 * self.total_mass
 
         # Dependent miscellaneous variables
@@ -93,7 +98,13 @@ class ElasticTube(object):
 
         # Load environmental data
         wave_data = scipy.io.loadmat(r'wec_design_optimization/elastic_tube/period_probability_distribution.mat')
-        self.frequency_probability_distribution = 0.01 * np.array(wave_data['Pa'][0])
+        period_data = np.array(wave_data['Ta'][0])
+        period_probabilities = 0.01 * np.array(wave_data['Pa'][0])
+        period_probability_function = interp1d(period_data, period_probabilities, bounds_error=False, fill_value=0.0)
+        
+        # Create wave frequency probability distribution function with a normalized total probability of 1
+        frequency_probabilities = period_probability_function(2 * pi / self.wave_frequencies)
+        self.frequency_probability_distribution = frequency_probabilities / np.sum(frequency_probabilities)
 
         # Solve for goemetric modes and add them as custom degrees of freedom
         self.evaluate_modal_frequency_information()
@@ -138,6 +149,9 @@ class ElasticTube(object):
             radius=self.static_radius, length=self.length, center=(0, 0, self.submergence),
             nx=int(1.25*self.length), ntheta=20, nr=int(5*self.static_radius), clever=False)
         tube.keep_immersed_part()
+        # Mesh convergence test
+        # length: 0.5, 0.8, 1.0, 1.25, 1.50  # ntheta: 10, 15, 20, 20, 25  # nr: 2, 3, 4, 5, 5
+        # Final result: nx=int(1.25*self.length), ntheta=20, nr=int(5*self.static_radius), clever=False
 
         # Add all elastic mode DOFs
         for k in range(self.mode_count):
@@ -272,6 +286,7 @@ class ElasticTube(object):
             material_mean_power_dissipation (1d np array)
 
         """
+        omega = mode_response_dataset['omega']
         modal_response_amplitudes = self.wave_height * mode_response_dataset
         total_damping_response = 0
         for k1 in range(self.mode_count):
@@ -281,7 +296,7 @@ class ElasticTube(object):
                 total_damping_response += (modal_response_amplitudes.sel(radiating_dof=index_1) * np.conjugate(modal_response_amplitudes.sel(radiating_dof=index_2))).real \
                                             * self.wall_damping_matrix[k1][k2]
 
-        material_mean_power_dissipation = (1 / 2) * self.rho * self.cross_sectional_area * self.dissipation_coefficient * (self.wave_frequencies ** 2) * total_damping_response
+        material_mean_power_dissipation = (1 / 2) * self.rho * self.cross_sectional_area * self.dissipation_coefficient * (omega ** 2) * total_damping_response
         power_take_off_power_spectrum = (self.power_take_off_damping / (self.power_take_off_damping + self.wall_damping)) \
                                             * material_mean_power_dissipation
         return power_take_off_power_spectrum
