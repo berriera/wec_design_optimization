@@ -41,7 +41,7 @@ def hooke_jeeves__greedy(obj_function, starting_point, upper_bounds, lower_bound
 
     def check_history(history_list, potential_design):
         for design in history_list:
-            if np.array_equal(potential_design, design):
+            if np.allclose(potential_design, design):
                 return True
         return False
 
@@ -55,14 +55,14 @@ def hooke_jeeves__greedy(obj_function, starting_point, upper_bounds, lower_bound
         new_location = best_location + move
         print('\tTo test design variables: {}'.format(new_location), file=f)
 
-        # Check bounds first and constraint if relevant
+        # Try new move if in bounds and has not been visited before
         bounds_check = np.all(new_location <= upper_bounds) and np.all(new_location >= lower_bounds)
+
         if check_history(location_history, new_location):
             print('\tDesign {} already visited'.format(new_location), file=f)
             past_location_index = np.where(new_location == location_history)[0][0]
             new_objective_value = function_history[past_location_index]
 
-        # Try new move if in bounds and has not been visited before
         elif bounds_check:
             iteration_count = iteration_count + 1
 
