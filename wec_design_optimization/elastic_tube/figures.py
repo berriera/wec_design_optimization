@@ -185,6 +185,9 @@ def plot_mode_shapes(tube, sorted_dof_integers):
 
         return
 
+def plot_tube_shapes(tube, sorted_dof_integers):
+    pass
+
 def plot_dissipated_power_statistics(tube):
         damping_values = np.linspace(0, 5.0 * tube.optimal_damping_value, 300)
         power_mean_values = np.zeros_like(damping_values)
@@ -367,7 +370,7 @@ print('Objective function for 5 modes is {:.2f} W'.format(f))
 #plot_dissipated_power_statistics(tube)
 
 ### After fixing the wave period probability distribution function
-## Mode shape convergence data, refined mesh, 80 equally spaced wave frequencies
+## Mode shape convergence data, refined mesh, 80 equally spaced wave frequencies: 10 modes final answer
 # [0.650, 90.0, -11.25]
 modes =   [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
 power =   [311.97, 1650.89, 3363.75, 4335.06, 4919.97, 5024.29, 5057.75, 5064.12, 5046.68, 5018.87, 5011.46, 5012.87]
@@ -380,8 +383,12 @@ power = [88.24, 2250.79, 7624.85, 69942.22, 133480.10, 205137.71, 220561.67, 247
 modes = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
 power = [0.99, 198.18, 765.07, 859.46, 938.12, 942.50, 965.62, 966.51, 975.87, 975.87, 975.87, 975.87]
 
+# [1.10, 35.0, -1.25]
+modes = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+power = [2834.25, 11467.10, 17221.75, 22578.98, 21678.91, 21974.80, 21660.98, 21687.69, 21575.48, 21580.05, 21533.22, 21534.42]
 
-## Mesh cell convergence data, 10 modes and 80 wave periods
+
+## Mesh cell convergence data, 10 modes and 80 wave frequencies
 # [0.650, 90.0, -11.25]
 cells = [470, 1038, 1880, 2360, 3390]
 power = [4520.04 , 4839.04 , 5013.62, 5018.87, 5072.83]
@@ -394,16 +401,23 @@ power = [238199.56, 252413.99, 260152.51, 260017.45, 262253.18]
 cells = [192, 404, 732, 874, 1206, 1542, 2106]
 power = [1015.82, 955.05, 980.10, 975.87, 1047.38, 1009.54, 1003.59]
 
+# [1.10, 35.0, -1.25]
+cells = [210, 482, 860, 1060, 1498, 1980, 2970, 4130]
+power = [51040.38, 34142.98, 25995.07, 21580.05, 19960.21, 18791.41, 18526.93, 18416.32]
 
-## Frequency divisions, 10 modes, fully refined mesh
+## Frequency divisions, 10 modes, fully refined mesh: 50 frequencies final answer
 # [0.650, 90.0, -11.25]
-divisions= [10, 20, 30]
-power = [4864.22, 4984.34, 5036.17, 4979.15, 5015.43, 5018.37, 5018.25, 5018.87, 5019.25]
-#### Catch that you've already run everything for 80 frequencies
+divisions= [5, 10, 20, 30, 40, 50, 60, 70, 80, 90]
+power = [14371.15, 4864.22, 4984.34, 5036.17, 4979.15, 5015.43, 5018.37, 5018.25, 5018.87, 5019.25]
+
 # [1.10, 192.0, -4.00]
-divisions= [10, 20]
-power = [165139.33, 293578.73]
+divisions= [5, 10, 20, 30, 40, 50, 60, 70, 80, 90]
+power = [209931.46, 165139.33, 293578.73, 250560.80, 255950.94, 260428.95, 259606.60, 260112.74, 260017.45, 259887.74]
 
 # [2.75, 22.0, -1.50]
-divisions= [10, 20, 30, 40, 50, 60, 70, 80, 90]
-power = [974.84, 971.98, 978.75, 973.45, 975.61, 975.87, 975.04, 975.87, 975.67]
+divisions= [5, 10, 20, 30, 40, 50, 60, 70, 80, 90]
+power = [923.64, 974.84, 971.98, 978.75, 973.45, 975.61, 975.87, 975.04, 975.87, 975.67]
+
+# [1.10, 35.0, -1.25]
+divisions = [5, 10, 20, 30, 40, 50, 60, 70, 80, 90, 95]
+power = [23974.17, 23645.14, 21660.26, 21624.84, 21501.35, 21572.35, 21588.47, 21565.20, 21580.05, 10051.49, 21573.71]
