@@ -147,7 +147,7 @@ class ElasticTube(object):
         print('\tGenerating tube.')
         tube = cpt.HorizontalCylinder(
             radius=self.static_radius, length=self.length, center=(0, 0, self.submergence),
-            nx=int(1.25*self.length), ntheta=20, nr=int(5*self.static_radius), clever=False)
+            nx=int(1.50*self.length), ntheta=25, nr=int(5*self.static_radius), clever=False)
         tube.keep_immersed_part()
         # Mesh convergence test
         # length: 0.5, 0.8, 1.0, 1.25, 1.50  # ntheta: 10, 15, 20, 20, 25  # nr: 2, 3, 4, 5, 5
