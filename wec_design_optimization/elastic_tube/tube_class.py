@@ -3,7 +3,7 @@ import numpy as np
 import capytaine as cpt
 import logging
 
-def evaluate_tube_design(design_variables, mode_count=5):
+def evaluate_tube_design(design_variables, mode_count=10):
         """Evaluates a complete tube design from start to finish
 
         """
@@ -54,7 +54,7 @@ class ElasticTube(object):
         self.water_depth = -45
         self.wave_direction = 0.0
         self.mode_count = mode_count
-        frequency_count = 80
+        frequency_count = 50
         #self.wave_frequencies = np.linspace(2 * pi / 17.8155, 2 * pi / 3.2409, frequency_count)
         self.wave_frequencies = np.linspace(0.3, 2.0, frequency_count)
         self.wave_height = 1.0
