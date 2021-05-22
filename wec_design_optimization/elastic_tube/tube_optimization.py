@@ -14,8 +14,6 @@ def hooke_jeeves__greedy(obj_function, starting_point, upper_bounds, lower_bound
         moves_array[2*n][n] = moves_list[n]
         moves_array[2*n+1][n] = -moves_list[n]
 
-    print(moves_array)
-
     # Initialize history variables
     location_history = []
     function_history = []
@@ -96,9 +94,7 @@ def hooke_jeeves__greedy(obj_function, starting_point, upper_bounds, lower_bound
                 if np.any(moves_array[k] != search_direction):
                     tmp[row] = moves_array[k]
                     row += 1
-            
             moves_array = np.copy(tmp)
-            print(moves_array)
 
             # Reset the search direction
             search_direction_int = 0
@@ -108,7 +104,7 @@ def hooke_jeeves__greedy(obj_function, starting_point, upper_bounds, lower_bound
         elif search_direction_int < (search_direction_count - 1):
             search_direction_int = search_direction_int + 1
 
-        # Make lower discretization level when out of moves at the current level
+        # Make lower discretization level when out of moves at the current alpha level
         elif alpha > 1:
             alpha = (1/2) * alpha
             search_direction_int = 0
