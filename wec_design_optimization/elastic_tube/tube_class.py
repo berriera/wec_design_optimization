@@ -3,7 +3,7 @@ import numpy as np
 import capytaine as cpt
 import logging
 
-def evaluate_tube_design(design_variables, mode_count=10):
+def evaluate_tube_design(design_variables, mode_count=10, variance_penalty=0):
         """Evaluates a complete tube design from start to finish
 
         """
@@ -18,9 +18,9 @@ def evaluate_tube_design(design_variables, mode_count=10):
         damping_value, optimal_objective_function = elastic_tube_instance.optimize_damping()
         print('\tOptimal damping value = {:.2f}'.format(damping_value))
 
-        # TODO: update to include variance from objective function instead of from .optimize_damping()
+        robust_objective = -elastic_tube_instance.power_mean + variance_penalty * (elastic_tube_instance.power_standard_deviation ** 2)
 
-        return optimal_objective_function
+        return robust_objective
 
 
 class ElasticTube(object):
