@@ -31,7 +31,7 @@ start_time = '\nStart_time: {}.'.format(datetime.datetime.today())
 header = header + variables + bounds + moves + start_time
 
 for starting_design in starting_locations:
-    history_file = 'geometry_optimization__x0=rs_le_zs=[{}]'.format(starting_design)
-    hooke_jeeves__greedy(obj_function=test_quadratic_function,
+    history_file = 'geometry_optimization__x0=rs_le_zs={}.txt'.format(starting_design)
+    hooke_jeeves__greedy(obj_function=evaluate_tube_design,
                             starting_point=starting_design, upper_bounds=upper_bounds, lower_bounds=lower_bounds,
                             moves_list=moves_list, history_file=history_file, header=header)
