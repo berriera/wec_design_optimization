@@ -12,13 +12,19 @@ def evaluate_tube_design(design_variables, mode_count=10, variance_penalty=0):
             return 0.0
 
         elastic_tube_instance = ElasticTube(tube_design_variables=design_variables, mode_count=mode_count)
+        
+        # Check for a previous hydrodynamics run of the current design
+        if elastic_tube_instance.check_history() is False:
+            elastic_tube_instance.solve_tube_hydrodynamics()
 
         # Solve for motion and optimize damping for optimal power
-        elastic_tube_instance.solve_tube_hydrodynamics()
         damping_value, optimal_objective_function = elastic_tube_instance.optimize_damping()
         print('\tOptimal damping value = {:.2f}'.format(damping_value))
+        print('\n\tOptimal mean power = {:.2f}'.format(optimal_objective_function))
+
 
         robust_objective = -elastic_tube_instance.power_mean + variance_penalty * (elastic_tube_instance.power_standard_deviation ** 2)
+        print('\tRobust objective is {:.2f}'.format(robust_objective))
 
         return robust_objective
 
@@ -225,7 +231,8 @@ class ElasticTube(object):
         
         if self.save_results:
             from capytaine.io.xarray import separate_complex_values
-            save_file_name = 'flexible_tube_results__rs_le_zs__{}_{}_{}__with_{}_cells.nc'.format(self.static_radius, self.length, self.submergence, self.tube.mesh.nb_faces)
+            save_file_name = 'flexible_tube_results__rs_le_zs__{:.2f}_{:.1f}_{:.2f}__with_{}_cells.nc' \
+                                .format(self.static_radius, self.length, self.submergence, self.tube.mesh.nb_faces)
             separate_complex_values(result_data).to_netcdf(save_file_name,
                                     encoding={'radiating_dof': {'dtype': 'U'},
                                     'influenced_dof': {'dtype': 'U'}}
@@ -233,6 +240,20 @@ class ElasticTube(object):
 
         self.result_data = result_data
 
+    def check_history(self):
+        import os
+        import xarray as xr
+        load_file_name = 'flexible_tube_results__rs_le_zs__{:.2f}_{:.1f}_{:.2f}__with_{}_cells.nc' \
+                            .format(self.static_radius, self.length, self.submergence, self.tube.mesh.nb_faces)
+
+        # Check if the hydrodynamics file has already been run
+        if os.path.isfile(load_file_name):
+            results_data = cpt.io.xarray.merge_complex_values(xr.open_dataset(load_file_name))
+            print('\tDesign in archive! No need to solve tube hydrodynamics.')
+            self.result_data = results_data
+            return True
+        else:
+            return False
 
     def optimize_damping(self):
         from scipy.optimize import minimize_scalar
