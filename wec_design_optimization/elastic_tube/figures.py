@@ -232,7 +232,7 @@ def plot_dissipated_power_statistics(tube, penalties=[0]):
 
 
 def plot_dispersion_formula(tube):
-    wave_frequencies = np.linspace(1e-4, 10*pi, 63000)
+    wave_frequencies = np.linspace(0.215, 2.085, 500)
     boundary1 = np.zeros_like(wave_frequencies)
     boundary2 = np.zeros_like(wave_frequencies)
     k = 0
@@ -240,15 +240,25 @@ def plot_dispersion_formula(tube):
         boundary1[k] = tube._mode_type_1__boundary_conditions(f)
         boundary2[k] = tube._mode_type_2__boundary_conditions(f)
         k += 1
-    plt.plot(wave_frequencies, boundary1)
-    plt.plot(wave_frequencies, boundary2)
-    plt.xlabel('Wave Frequency $\omega$ [rad/s]')
-    plt.hlines(y=0, xmin=wave_frequencies[0], xmax=wave_frequencies[-1])
-    plt.xlim(xmin=0, xmax=10)
-    plt.ylim(ymin=-2, ymax=2)
+
+    fig, (ax1, ax2) = plt.subplots(2, 1, sharex=True)
+    ax1.plot(wave_frequencies, boundary1)
+    ax2.plot(wave_frequencies, boundary2)
+    ax2.set_xlabel('Wave Frequency $\omega$ [rad/s]')
+    ax1.set_ylabel('$f_1(\omega$)')
+    ax2.set_ylabel('$f_2(\omega$)')
+
+    ax1.hlines(y=0, xmin=0.215, xmax=2.085, color='black', linestyles ='dotted')
+    ax2.hlines(y=0, xmin=0.215, xmax=2.085, color='black', linestyles ='dotted')
+    ax2.set_xlim(xmin=0.215, xmax=2.085)
+    ax1.set_ylim(ymin=-5000, ymax=5000)
+    ax2.set_ylim(ymin=-5000, ymax=5000)
+    ax1.scatter(np.array(tube.mode_type_1_frequency_list), np.zeros_like(tube.mode_type_1_frequency_list), s=100)
+    ax2.scatter(np.array(tube.mode_type_2_frequency_list), np.zeros_like(tube.mode_type_2_frequency_list), s=100)
+    plt.show()
+
     print(tube.mode_type_1_frequency_list)
     print(tube.mode_type_2_frequency_list)
-    plt.show()
 
     return
 
@@ -407,9 +417,12 @@ def plot_sampled_designs():
 
 #plot_sampled_designs()
 #evaluate_tube(np.array( [1.15, 200., -1.25]))
-plot_all_tube_results(np.array([1.15, 200., -1.25]), 7450, mode_ints=[4, 0, 5])
+#plot_all_tube_results(np.array([1.15, 200., -1.25]), 7450, mode_ints=[4, 0, 5])
 
-#tube = ElasticTube(tube_design_variables=np.array([1.15, 200., -1.25]), mode_count=10)
+tube = ElasticTube(tube_design_variables=np.array([1.10, 192.0, -4.00]), mode_count=12)
+#tube = ElasticTube(tube_design_variables=np.array([1.15, 200., -1.25]), mode_count=12)
+
+#plot_dispersion_formula(tube)
 #intrinsic_impedance(tube, [4, 0, 5], 1.15, 200.0, -1.25, 7450)
 
 ### After fixing the wave period probability distribution function
