@@ -2,6 +2,7 @@ from math import pi
 import numpy as np
 import capytaine as cpt
 import logging
+import warnings
 
 def evaluate_tube_design(design_variables, mode_count=10, variance_penalty=0):
         """Evaluates a complete tube design from start to finish
@@ -22,11 +23,25 @@ def evaluate_tube_design(design_variables, mode_count=10, variance_penalty=0):
         print('\tOptimal damping value = {:.2f}'.format(damping_value))
         print('\n\tOptimal mean power = {:.2f}'.format(optimal_objective_function))
 
+        #robust_objective = -elastic_tube_instance.power_mean + variance_penalty * (elastic_tube_instance.power_standard_deviation ** 2)
+        #print('\tRobust objective is {:.2f}'.format(robust_objective))
 
-        robust_objective = -elastic_tube_instance.power_mean + variance_penalty * (elastic_tube_instance.power_standard_deviation ** 2)
-        print('\tRobust objective is {:.2f}'.format(robust_objective))
+        return optimal_objective_function
 
-        return robust_objective
+def evaluate_tube_design__bayesian(radius, length, submergence):
+        from math import fabs
+        design_variables = np.array([radius, length, submergence])
+
+        # Return 0 power if the entire tube is above the free surface
+        if design_variables[2] >= design_variables[0]:
+            return 0.0
+        warnings.filterwarnings('once')
+        elastic_tube_instance = ElasticTube(tube_design_variables=design_variables, mode_count=10)
+        elastic_tube_instance.solve_tube_hydrodynamics()
+        damping_value, optimal_objective_function = elastic_tube_instance.optimize_damping()
+
+        # Maximizing objective function
+        return fabs(optimal_objective_function)
 
 
 class ElasticTube(object):
@@ -38,7 +53,7 @@ class ElasticTube(object):
         from scipy.interpolate import interp1d
 
         #logging.basicConfig(level=logging.INFO, format="%(levelname)s:\t%(message)s")
-        self.save_results = True
+        self.save_results = False
 
         # Unpack independent design variables
         # Variable notation: r_s, L, z_s
@@ -150,7 +165,7 @@ class ElasticTube(object):
             tube (an instance of a Capytaine FloatingBody)
 
         """
-        print('\tGenerating tube.')
+        #print('\tGenerating tube.')
         tube = cpt.HorizontalCylinder(
             radius=self.static_radius, length=self.length, center=(0, 0, self.submergence),
             nx=int(1.50*self.length), ntheta=25, nr=int(5*self.static_radius), clever=False)
@@ -211,7 +226,7 @@ class ElasticTube(object):
         """
 
         """
-        print('\tSolving tube hydrodynamics.')
+        #print('\tSolving tube hydrodynamics.')
 
         solver = cpt.BEMSolver()
         problems = [cpt.RadiationProblem(omega=omega, 
@@ -249,7 +264,7 @@ class ElasticTube(object):
         # Check if the hydrodynamics file has already been run
         if os.path.isfile(load_file_name):
             results_data = cpt.io.xarray.merge_complex_values(xr.open_dataset(load_file_name))
-            print('\tDesign in archive! No need to solve tube hydrodynamics.')
+            #print('\tDesign in archive! No need to solve tube hydrodynamics.')
             self.result_data = results_data
             return True
         else:
@@ -258,7 +273,7 @@ class ElasticTube(object):
     def optimize_damping(self):
         from scipy.optimize import minimize_scalar
 
-        print('\tOptimizing damping value.')
+        #print('\tOptimizing damping value.')
         damping_optimization_result = minimize_scalar(self._pto_damping_dissipated_power, method='golden')
         optimal_damping = damping_optimization_result.x
         optimal_power = damping_optimization_result.fun
@@ -492,7 +507,7 @@ class ElasticTube(object):
 
         return
 
-    def _calculate_dispersion_roots(self, function_name, eps=1e-4, reltol=1e-3):
+    def _calculate_dispersion_roots(self, function_name, eps=1e-4, reltol=1e-3, root_check_eps=1e-6):
         """Calculates the roots of the nonlinear dispersion relationship governing the elastic tube
         
         Args:
@@ -527,7 +542,10 @@ class ElasticTube(object):
         # Use approximate roots as starting points for finding each actual root. Only accept a new root if it is both new and non-zero
         for approximate_modal_frequency in approximate_modal_frequency_list:
             exact_modal_frequency = scipy.optimize.fsolve(func=function_name, x0=approximate_modal_frequency)[0]
-            if exact_modal_frequency > eps and not np.any(abs(exact_modal_frequency_list - exact_modal_frequency) / exact_modal_frequency < reltol):
+            
+            if exact_modal_frequency > eps and not np.any(abs(exact_modal_frequency_list - exact_modal_frequency) / exact_modal_frequency < reltol) \
+                and (function_name(exact_modal_frequency + root_check_eps) * function_name(exact_modal_frequency - root_check_eps)) <= 0.0:
+                
                 exact_modal_frequency_list = np.append(exact_modal_frequency_list, exact_modal_frequency)
 
         return exact_modal_frequency_list
